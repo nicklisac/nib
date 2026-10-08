@@ -43,10 +43,20 @@ class AnthropicProvider implements LLMProvider {
         if (msg.role == Role.system) continue;
 
         if (msg.role == Role.user) {
-          conversationMessages.add({
-            'role': 'user',
-            'content': msg.content ?? '',
-          });
+          if (conversationMessages.isNotEmpty &&
+              conversationMessages.last['role'] == 'user') {
+            final prev = conversationMessages.last['content'];
+            if (prev is String) {
+              conversationMessages.last['content'] = '$prev\n\n${msg.content ?? ''}';
+            } else if (prev is List) {
+              prev.add({'type': 'text', 'text': msg.content ?? ''});
+            }
+          } else {
+            conversationMessages.add({
+              'role': 'user',
+              'content': msg.content ?? '',
+            });
+          }
         } else if (msg.role == Role.assistant) {
           final contentList = <Map<String, dynamic>>[];
           if (msg.content != null && msg.content!.isNotEmpty) {
@@ -67,16 +77,21 @@ class AnthropicProvider implements LLMProvider {
             'content': contentList,
           });
         } else if (msg.role == Role.tool) {
-          conversationMessages.add({
-            'role': 'user',
-            'content': [
-              {
-                'type': 'tool_result',
-                'tool_use_id': msg.toolCallId ?? '',
-                'content': msg.content ?? '',
-              }
-            ],
-          });
+          final resultBlock = {
+            'type': 'tool_result',
+            'tool_use_id': msg.toolCallId ?? '',
+            'content': msg.content ?? '',
+          };
+          if (conversationMessages.isNotEmpty &&
+              conversationMessages.last['role'] == 'user' &&
+              conversationMessages.last['content'] is List) {
+            (conversationMessages.last['content'] as List).add(resultBlock);
+          } else {
+            conversationMessages.add({
+              'role': 'user',
+              'content': [resultBlock],
+            });
+          }
         }
       }
 

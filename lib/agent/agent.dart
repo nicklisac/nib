@@ -150,6 +150,14 @@ class Agent {
       _turnStreamCompleter = null;
 
       if (_isCancelled || hasError) {
+        if (_isCancelled) {
+          final partial = textBuffer.toString().trim();
+          final assistantText = partial.isNotEmpty
+              ? '$partial\n\n[Interrupted by user]'
+              : '[Interrupted by user]';
+          session.addMessage(ChatMessage.assistant(assistantText));
+          await session.saveToDisk();
+        }
         return;
       }
 
@@ -168,8 +176,20 @@ class Agent {
       }
 
       // Execute requested tools
-      for (final call in toolCalls) {
-        if (_isCancelled) break;
+      for (int i = 0; i < toolCalls.length; i++) {
+        final call = toolCalls[i];
+
+        if (_isCancelled) {
+          session.addMessage(
+            ChatMessage.toolResult(
+              toolCallId: call.id,
+              toolName: call.name,
+              content: '[Tool execution cancelled by user]',
+            ),
+          );
+          continue;
+        }
+
         callbacks?.onToolCallStarted?.call(call);
 
         final tool = _tools[call.name];
@@ -194,6 +214,24 @@ class Agent {
 
         if (_isCancelled) {
           callbacks?.onToolCallFinished?.call(call, 'Cancelled', stopwatch.elapsed);
+          session.addMessage(
+            ChatMessage.toolResult(
+              toolCallId: call.id,
+              toolName: call.name,
+              content: '[Tool execution cancelled by user]',
+            ),
+          );
+          // Fulfill all remaining pending tool calls in this turn so transcript schema is valid
+          for (int j = i + 1; j < toolCalls.length; j++) {
+            final nextCall = toolCalls[j];
+            session.addMessage(
+              ChatMessage.toolResult(
+                toolCallId: nextCall.id,
+                toolName: nextCall.name,
+                content: '[Tool execution cancelled by user]',
+              ),
+            );
+          }
           break;
         }
 
@@ -209,6 +247,13 @@ class Agent {
             content: sanitizedResult,
           ),
         );
+      }
+
+      if (_isCancelled) {
+        session.addMessage(
+          ChatMessage.assistant('[Tool execution interrupted by user. Ready for steering instruction.]'),
+        );
+        break;
       }
 
       // Check if finish reason indicates stop despite tool calls (rare)

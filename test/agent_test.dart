@@ -55,7 +55,7 @@ void main() {
       await tempDir.delete(recursive: true);
     });
 
-    test('Agent turn cancellation aborts execution cleanly', () async {
+    test('Agent turn cancellation preserves valid transcript and allows follow-up steering', () async {
       final session = AgentSession();
       final agent = Agent(
         provider: MockProvider(),
@@ -63,8 +63,9 @@ void main() {
       );
 
       final events = <String>[];
+      // Turn 1: Cancel mid-generation
       await agent.runTurn(
-        'hello',
+        'first prompt',
         callbacks: AgentCallbacks(
           onTextDelta: (t) {
             events.add('text:$t');
@@ -74,6 +75,20 @@ void main() {
       );
 
       expect(events, isNotEmpty);
+      // Verify transcript has: system, user, assistant (with interrupted marker)
+      expect(session.messages.length, equals(3));
+      expect(session.messages[1].role, equals(Role.user));
+      expect(session.messages[1].content, equals('first prompt'));
+      expect(session.messages[2].role, equals(Role.assistant));
+      expect(session.messages[2].content, contains('[Interrupted by user]'));
+
+      // Turn 2: Follow-up steering instruction
+      await agent.runTurn('steer instruction');
+      // Messages should now be: system, user1, assistant1, user2, assistant2
+      expect(session.messages.length, greaterThanOrEqualTo(5));
+      expect(session.messages[3].role, equals(Role.user));
+      expect(session.messages[3].content, equals('steer instruction'));
+      expect(session.messages[4].role, equals(Role.assistant));
     });
   });
 }
