@@ -68,6 +68,11 @@ To add a tool: subclass `AgentTool` in `lib/tools/`, implement `name`, `descript
   scanned.
 - CI (`.github/workflows/ci.yml`) runs `dart format --set-exit-if-changed`,
   `dart analyze --fatal-infos`, and `dart test`. All three must pass.
+- When the user mentions something that bugs them in passing — a UI or QoL irritation,
+  a rough edge, "this flickers", "this is annoying" — append a one-line entry to the
+  [itch log](https://github.com/nicklisac/nib/issues/19) (`gh issue edit 19 --body-file`),
+  then carry on with what they actually asked for. Capture without asking and without
+  triaging; the log is visible on the tracker, which is what gets it read.
 
 ## Agent skills
 
