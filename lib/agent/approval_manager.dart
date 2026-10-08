@@ -26,16 +26,23 @@ class ApprovalManager {
 
     while (true) {
       stdout.write('  ${theme.secondary.text('Apply this change?')} ${theme.muted.text('[y: yes, n: no, d: show diff]')} ${theme.accent.text('❯')} ');
+      TerminalManager.instance.clearBuffer();
       final key = await TerminalManager.instance.nextKey();
+      if (key.isControl && key.controlChar == ControlCharacter.escape) {
+        stdout.writeln('Esc');
+        stdout.writeln('  ${theme.error.text('✖ Change rejected by user (Esc).')}');
+        return false;
+      }
+
       final char = key.isControl
           ? (key.controlChar == ControlCharacter.enter ? 'y' : '')
           : key.char.toLowerCase();
 
       stdout.writeln(char.isNotEmpty ? char : (key.isControl ? key.controlChar.name : ''));
 
-      if (char == 'y' || char == '') {
+      if (char == 'y') {
         return true;
-      } else if (char == 'n' || (key.isControl && key.controlChar == ControlCharacter.escape)) {
+      } else if (char == 'n') {
         stdout.writeln('  ${theme.error.text('✖ Change rejected by user.')}');
         return false;
       } else if (char == 'd') {
@@ -45,6 +52,8 @@ class ApprovalManager {
           stdout.writeln('    $line');
         }
         stdout.writeln();
+      } else {
+        stdout.writeln('  ${theme.muted.text('Please enter y, n, or d (or Esc to reject).')}');
       }
     }
   }
@@ -64,11 +73,24 @@ class ApprovalManager {
     stdout.writeln('    ${theme.code.text(command)}');
     stdout.write('  ${theme.secondary.text('Execute?')} ${theme.muted.text('[y/n]')} ${theme.accent.text('❯')} ');
 
+    TerminalManager.instance.clearBuffer();
     final key = await TerminalManager.instance.nextKey();
+    if (key.isControl && key.controlChar == ControlCharacter.escape) {
+      stdout.writeln('Esc');
+      stdout.writeln('  ${theme.error.text('✖ Command rejected by user (Esc).')}');
+      return false;
+    }
+
     final char = key.isControl
         ? (key.controlChar == ControlCharacter.enter ? 'y' : '')
         : key.char.toLowerCase();
-    stdout.writeln(char.isNotEmpty ? char : '');
-    return char == 'y' || char == '';
+
+    stdout.writeln(char.isNotEmpty ? char : (key.isControl ? key.controlChar.name : ''));
+    if (char == 'y') {
+      return true;
+    } else {
+      stdout.writeln('  ${theme.error.text('✖ Command rejected by user.')}');
+      return false;
+    }
   }
 }

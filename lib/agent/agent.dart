@@ -31,12 +31,14 @@ class Agent {
   AgentSession session;
   final Map<String, AgentTool> _tools = {};
   final int maxTurns;
+  final int? contextWindow;
 
   Agent({
     required this.provider,
     required this.session,
     List<AgentTool> tools = const [],
     this.maxTurns = 20,
+    this.contextWindow,
   }) {
     for (final t in tools) {
       registerTool(t);
@@ -76,7 +78,9 @@ class Agent {
     session.addMessage(ChatMessage.user(userPrompt));
 
     // Auto-compact history if threshold is reached (Tau-style context window management)
-    if (CompactionManager.shouldAutoCompact(session)) {
+    final effectiveContext = contextWindow ?? CompactionManager.defaultContextWindowTokens;
+    final reserveTokens = effectiveContext > 32000 ? 16384 : (effectiveContext ~/ 4);
+    if (CompactionManager.shouldAutoCompact(session, contextWindow: effectiveContext, reserve: reserveTokens)) {
       callbacks?.onThoughtDelta?.call('\n[Context threshold reached: automatically compacting conversation history...]\n');
       await CompactionManager.compact(session: session, provider: provider);
     }

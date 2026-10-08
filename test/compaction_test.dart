@@ -46,5 +46,18 @@ void main() {
       // The last kept message should be the 10th assistant answer
       expect(session.messages.last.content, equals('Assistant answer 10'));
     });
+
+    test('shouldAutoCompact respects custom context window limits', () {
+      final session = AgentSession();
+      for (int i = 0; i < 10; i++) {
+        session.addMessage(ChatMessage.user('A' * 400));
+        session.addMessage(ChatMessage.assistant('B' * 400));
+      }
+      // With default 128k context window, should not compact
+      expect(CompactionManager.shouldAutoCompact(session), isFalse);
+
+      // With custom 2500 token window and 500 reserve, should compact
+      expect(CompactionManager.shouldAutoCompact(session, contextWindow: 2500, reserve: 500), isTrue);
+    });
   });
 }

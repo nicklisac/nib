@@ -41,7 +41,10 @@ class ListDirTool extends AgentTool {
     final recursive = (arguments['recursive'] as bool?) ?? false;
     final maxDepth = (arguments['max_depth'] as num?)?.toInt() ?? 3;
 
-    final targetPath = p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath);
+    final targetPath = p.normalize(p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath));
+    if (!p.isWithin(workingDirectory, targetPath) && targetPath != workingDirectory) {
+      return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
+    }
     final dir = Directory(targetPath);
 
     if (!await dir.exists()) {

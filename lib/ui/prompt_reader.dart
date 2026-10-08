@@ -70,6 +70,7 @@ class PromptReader {
 
   int _cursorRow = 0;
   int _paletteLines = 0;
+  DateTime? _lastCtrlCTime;
 
   /// Reads a line from terminal stdin with live command palette when typing `/`.
   Future<String?> readLine({required String prompt}) async {
@@ -127,14 +128,26 @@ class PromptReader {
               if (_cursorRow > 0) {
                 stdout.write('\x1B[${_cursorRow}A');
               }
-              stdout.write('\r\x1B[J$prompt');
+              stdout.writeln('^C');
+              stdout.write(prompt);
               buffer = '';
               cursor = 0;
               _cursorRow = 0;
               _paletteLines = 0;
               continue;
             } else {
-              return null;
+              final now = DateTime.now();
+              if (_lastCtrlCTime != null &&
+                  now.difference(_lastCtrlCTime!) < const Duration(seconds: 2)) {
+                stdout.writeln('^C');
+                return null;
+              } else {
+                _lastCtrlCTime = now;
+                stdout.writeln('^C');
+                stdout.writeln('  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}');
+                stdout.write(prompt);
+                continue;
+              }
             }
 
           case ControlCharacter.ctrlD:

@@ -11,6 +11,7 @@ import '../ai/openai_provider.dart';
 import 'ansi.dart';
 import 'markdown_renderer.dart';
 import 'session_picker.dart';
+import 'terminal_manager.dart';
 import 'theme.dart';
 
 /// Handles slash commands within the interactive CLI loop.
@@ -104,7 +105,7 @@ class SlashCommandHandler {
       case '/quit':
       case '/q':
         stdout.writeln(Ansi.dimText('Goodbye!'));
-        exit(0);
+        TerminalManager.instance.shutdown(0);
 
       default:
         stdout.writeln(Ansi.yellowText('  Unknown command "$cmd". Type /help for available commands.'));

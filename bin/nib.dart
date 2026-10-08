@@ -222,10 +222,14 @@ void main(List<String> arguments) async {
     SearchFilesTool(workingDirectory: workspace),
   ];
 
+  final activeProviderConf = config.providers[providerId];
+  final activeContextWindow = activeProviderConf?.contextWindow ?? config.contextWindow;
+
   final agent = Agent(
     provider: provider,
     session: session,
     tools: tools,
+    contextWindow: activeContextWindow,
   );
 
   final ui = CliUi(agent, config);

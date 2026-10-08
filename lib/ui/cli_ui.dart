@@ -89,7 +89,7 @@ class CliUi {
           final now = DateTime.now();
           if (_lastSigintTime != null && now.difference(_lastSigintTime!) < const Duration(seconds: 2)) {
             stdout.writeln('\n${NibTheme.current.muted.text('Exiting...')}' );
-            exit(0);
+            TerminalManager.instance.shutdown(0);
           } else {
             _lastSigintTime = now;
             stdout.writeln('\n  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}' );

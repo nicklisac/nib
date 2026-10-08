@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import '../agent/approval_manager.dart';
 import '../agent/tool.dart';
 import '../agent/undo_manager.dart';
 
@@ -45,11 +46,23 @@ class WriteFileTool extends AgentTool {
       return 'Error: Content argument is required';
     }
 
-    final fullPath = p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath);
+    final fullPath = p.normalize(p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath));
+    if (!p.isWithin(workingDirectory, fullPath) && fullPath != workingDirectory) {
+      return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
+    }
     final file = File(fullPath);
 
     try {
       final beforeContent = await file.exists() ? await file.readAsString() : '';
+      final approved = await ApprovalManager.instance.confirmFileEdit(
+        path: rawPath,
+        oldContent: beforeContent,
+        newContent: content,
+      );
+      if (!approved) {
+        return 'File write rejected by user for "$rawPath".';
+      }
+
       await file.parent.create(recursive: true);
       await file.writeAsString(content);
 

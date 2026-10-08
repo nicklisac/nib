@@ -46,20 +46,52 @@ class OpenAiProvider implements LLMProvider {
         requestBody['tool_choice'] = 'auto';
       }
 
-      final request = http.Request('POST', uri)
-        ..headers['Content-Type'] = 'application/json'
-        ..headers['Accept'] = 'text/event-stream'
-        ..body = jsonEncode(requestBody);
+      http.StreamedResponse? streamedResponse;
+      int attempts = 0;
+      const maxAttempts = 3;
 
-      if (apiKey.isNotEmpty) {
-        request.headers['Authorization'] = 'Bearer $apiKey';
+      while (attempts < maxAttempts) {
+        attempts++;
+        final request = http.Request('POST', uri)
+          ..headers['Content-Type'] = 'application/json'
+          ..headers['Accept'] = 'text/event-stream'
+          ..body = jsonEncode(requestBody);
+
+        if (apiKey.isNotEmpty) {
+          request.headers['Authorization'] = 'Bearer $apiKey';
+        }
+
+        try {
+          final res = await client.send(request);
+          if (res.statusCode == 200) {
+            streamedResponse = res;
+            break;
+          }
+
+          if ((res.statusCode == 429 || res.statusCode >= 500) && attempts < maxAttempts) {
+            final retryAfterSec = int.tryParse(res.headers['retry-after'] ?? '');
+            final delayMs = retryAfterSec != null
+                ? retryAfterSec * 1000
+                : (1000 * (1 << (attempts - 1)));
+            await Future.delayed(Duration(milliseconds: delayMs));
+            continue;
+          }
+
+          final errorBody = await res.stream.bytesToString();
+          yield ErrorEvent('API HTTP ${res.statusCode}: $errorBody');
+          return;
+        } catch (e) {
+          if (attempts < maxAttempts) {
+            await Future.delayed(Duration(milliseconds: 1000 * (1 << (attempts - 1))));
+            continue;
+          }
+          yield ErrorEvent('API Connection Error: $e');
+          return;
+        }
       }
 
-      final streamedResponse = await client.send(request);
-
-      if (streamedResponse.statusCode != 200) {
-        final errorBody = await streamedResponse.stream.bytesToString();
-        yield ErrorEvent('API HTTP ${streamedResponse.statusCode}: $errorBody');
+      if (streamedResponse == null) {
+        yield ErrorEvent('Failed to connect to API after $maxAttempts attempts.');
         return;
       }
 

@@ -94,5 +94,19 @@ void main() {
       final res = await bashTool.execute({'command': 'echo "Hello from Bash"'});
       expect(res, contains('Hello from Bash'));
     });
+
+    test('Tools reject path traversal outside workspace directory', () async {
+      final writeTool = WriteFileTool(workingDirectory: tempDir.path);
+      final readTool = ReadFileTool(workingDirectory: tempDir.path);
+      final editTool = EditFileTool(workingDirectory: tempDir.path);
+      final listTool = ListDirTool(workingDirectory: tempDir.path);
+      final searchTool = SearchFilesTool(workingDirectory: tempDir.path);
+
+      expect(await writeTool.execute({'path': '../evil.txt', 'content': 'bad'}), contains('outside workspace'));
+      expect(await readTool.execute({'path': '../evil.txt'}), contains('outside workspace'));
+      expect(await editTool.execute({'path': '../evil.txt', 'target_content': 'a', 'replacement_content': 'b'}), contains('outside workspace'));
+      expect(await listTool.execute({'path': '..'}), contains('outside workspace'));
+      expect(await searchTool.execute({'path': '..', 'query': 'secret'}), contains('outside workspace'));
+    });
   });
 }

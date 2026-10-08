@@ -43,7 +43,10 @@ class ReadFileTool extends AgentTool {
       return 'Error: Path argument is required';
     }
 
-    final fullPath = p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath);
+    final fullPath = p.normalize(p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath));
+    if (!p.isWithin(workingDirectory, fullPath) && fullPath != workingDirectory) {
+      return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
+    }
     final file = File(fullPath);
 
     if (!await file.exists()) {

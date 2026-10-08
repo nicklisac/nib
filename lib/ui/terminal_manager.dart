@@ -115,7 +115,7 @@ class TerminalManager {
   }
 
   /// Shuts down the terminal cleanly and terminates the process.
-  void shutdown([int exitCode = 0]) {
+  Never shutdown([int exitCode = 0]) {
     dispose();
     exit(exitCode);
   }

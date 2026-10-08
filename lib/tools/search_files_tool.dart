@@ -51,7 +51,10 @@ class SearchFilesTool extends AgentTool {
     final isRegex = (arguments['is_regex'] as bool?) ?? false;
     final caseSensitive = (arguments['case_sensitive'] as bool?) ?? false;
 
-    final targetPath = p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath);
+    final targetPath = p.normalize(p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath));
+    if (!p.isWithin(workingDirectory, targetPath) && targetPath != workingDirectory) {
+      return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
+    }
     final targetDir = Directory(targetPath);
 
     if (!await targetDir.exists()) {
@@ -77,6 +80,9 @@ class SearchFilesTool extends AgentTool {
       final relPath = p.relative(entity.path, from: workingDirectory);
       if (relPath.startsWith('.git/') ||
           relPath.startsWith('.dart_tool/') ||
+          relPath.contains('node_modules/') ||
+          relPath.contains('target/') ||
+          relPath.contains('.cache/') ||
           relPath.contains('/build/')) {
         continue;
       }

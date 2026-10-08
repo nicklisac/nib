@@ -7,12 +7,16 @@ class ProviderConfig {
   final String model;
   final String baseUrl;
   final String apiKey;
+  final int? contextWindow;
+  final int? maxTokens;
 
   ProviderConfig({
     required this.name,
     required this.model,
     required this.baseUrl,
     required this.apiKey,
+    this.contextWindow,
+    this.maxTokens,
   });
 
   factory ProviderConfig.fromJson(String id, Map<String, dynamic> json) {
@@ -21,6 +25,8 @@ class ProviderConfig {
       model: json['model'] as String? ?? 'default',
       baseUrl: (json['base_url'] as String? ?? 'https://api.openai.com/v1').replaceAll(RegExp(r'/+$'), ''),
       apiKey: json['api_key'] as String? ?? '',
+      contextWindow: (json['context_window'] as num?)?.toInt(),
+      maxTokens: (json['max_tokens'] as num?)?.toInt(),
     );
   }
 
@@ -29,6 +35,8 @@ class ProviderConfig {
         'model': model,
         'base_url': baseUrl,
         'api_key': apiKey,
+        if (contextWindow != null) 'context_window': contextWindow,
+        if (maxTokens != null) 'max_tokens': maxTokens,
       };
 }
 
@@ -38,12 +46,16 @@ class NibConfig {
   String? defaultModel;
   final Map<String, ProviderConfig> providers;
   String? systemPromptAppend;
+  int? contextWindow;
+  int? maxTokens;
 
   NibConfig({
     this.defaultProvider = 'exllama',
     this.defaultModel,
     Map<String, ProviderConfig>? providers,
     this.systemPromptAppend,
+    this.contextWindow,
+    this.maxTokens,
   }) : providers = providers ?? {};
 
   /// Loads configuration from ~/.nib/config.json or falls back to ~/.tart or ~/.tau.

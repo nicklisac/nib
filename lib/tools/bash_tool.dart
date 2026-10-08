@@ -9,6 +9,8 @@ class BashTool extends AgentTool {
   final String workingDirectory;
   Process? _activeProcess;
 
+  Timer? _escalateTimer;
+
   BashTool({String? workingDirectory})
       : workingDirectory = workingDirectory ?? Directory.current.path;
 
@@ -18,7 +20,8 @@ class BashTool extends AgentTool {
       final proc = _activeProcess;
       if (proc != null) {
         proc.kill(ProcessSignal.sigterm);
-        Timer(const Duration(milliseconds: 500), () {
+        _escalateTimer?.cancel();
+        _escalateTimer = Timer(const Duration(milliseconds: 500), () {
           try {
             proc.kill(ProcessSignal.sigkill);
           } catch (_) {}
@@ -69,7 +72,7 @@ class BashTool extends AgentTool {
         'bash',
         ['-c', command],
         workingDirectory: workingDirectory,
-        runInShell: true,
+        runInShell: false,
       );
       _activeProcess = process;
 
@@ -105,7 +108,8 @@ class BashTool extends AgentTool {
         timedOut = true;
         try {
           process.kill(ProcessSignal.sigterm);
-          Timer(const Duration(seconds: 2), () {
+          _escalateTimer?.cancel();
+          _escalateTimer = Timer(const Duration(seconds: 2), () {
             try {
               process.kill(ProcessSignal.sigkill);
             } catch (_) {}
@@ -115,7 +119,11 @@ class BashTool extends AgentTool {
 
       final exitCode = await process.exitCode;
       timer.cancel();
-      await Future.wait([outSub.asFuture(), errSub.asFuture()]);
+      _escalateTimer?.cancel();
+      try {
+        await Future.wait([outSub.asFuture(), errSub.asFuture()])
+            .timeout(const Duration(milliseconds: 500));
+      } catch (_) {}
       _activeProcess = null;
 
       final out = outBuffer.toString();
