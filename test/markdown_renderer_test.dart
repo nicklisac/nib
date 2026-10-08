@@ -156,5 +156,88 @@ print("hello world");
       }).toSet();
       expect(widths.length, equals(1), reason: 'All table lines in stream must match in width: $widths');
     });
+
+    test('renders full markdown gauntlet cleanly', () {
+      final markdown = '''
+# The Full `Markdown` Gauntlet 🥊
+
+## 1. Emphasis Ladder
+Plain → **bold** → *italic* → ***both at once*** → ~~struck~~ → ***~~dramatic~~*** → `inline code`
+
+## 2. Blocks
+> **Quote:** "It works on my machine."
+> — *Every developer, ever*
+
+```python
+def gate(pr: dict) -> bool:
+    """The Tech Lead approves. Nothing else merges."""
+    return pr["reviewed_by"] == "nib" and pr["tests"] == "green"
+```
+
+```bash
+\$ git commit -m "ship it"   # only I do this
+```
+
+## 3. Lists, Nested & Task-y
+1. Plan
+   1. Delegate
+      - [x] Spawn AGY ⚡
+      - [ ] Poll `agy-wrapper status`
+      - [ ] *Never* block
+2. Review
+3. Commit
+
+## 4. Table With Everything
+
+| Agent | Speed | Tier | Verdict |
+|:------|:-----:|-----:|--------:|
+| **AGY** | 🚀🚀🚀 | 1 | `default` |
+| *Subagent* | 🚀🚀 | 2 | fallback |
+| Jules | 🐢 | 3 | ~~great~~ rare |
+
+## 5. Odds & Ends
+- Link: [the repo](https://example.com "hover me") · Ref-style: [docs][d]
+- Footnote: Flash is the ceiling[^1]
+- HTML sneaks in: H<sub>2</sub>O, x<sup>2</sup>, <kbd>Ctrl</kbd>+<kbd>C</kbd>
+- Escape what you mean: \\*not italic\\*, \\# not a heading
+- Keys: `HIGH` | `MEDIUM` | `LOW` — escalate effort, not spend
+
+---
+
+**Rule of thumb:** *be bold,* ***be brief***, `verify before you merge`.
+
+[d]: https://example.com/docs
+
+[^1]: Unless the developer says otherwise.
+''';
+
+      final rendered = MarkdownRenderer.render(markdown);
+      print('\n=== GAUNTLET RENDER ===\n$rendered\n=======================\n');
+
+      // 1. Must never leak raw ANSI escape fragments into strings/numbers
+      expect(rendered, isNot(contains('38;2;166;227;161m')));
+      expect(rendered, isNot(contains('@@ESC')));
+
+      // 2. Syntax highlighting must preserve quotes and comments
+      expect(rendered, contains('"""The Tech Lead approves. Nothing else merges."""'));
+      expect(rendered, contains('# only I do this'));
+
+      // 3. Task lists must render with checkboxes and nested hierarchy
+      expect(rendered, contains('✔'));
+      expect(rendered, contains('Spawn AGY'));
+      expect(rendered, contains('☐'));
+      expect(rendered, contains('Poll'));
+      expect(rendered, contains('Delegate'));
+
+      // 4. Blockquotes must format inline markdown inside the quote
+      expect(rendered, contains('Quote:'));
+      expect(rendered, contains('"It works on my machine."'));
+
+      // 5. Escaped asterisks must render as literal asterisks (not italicized)
+      expect(rendered, contains('*not italic*'));
+
+      // 6. Strikethrough code must be present
+      expect(rendered, contains('\x1B[9m'));
+    });
   });
 }
