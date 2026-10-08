@@ -164,6 +164,7 @@ class CliUi {
     _inThoughtBlock = false;
     _isExecutingTurn = true;
     final theme = NibTheme.current;
+    final markdownPrinter = StreamingMarkdownPrinter(theme: theme);
 
     _spinner.start('Thinking...');
 
@@ -184,7 +185,7 @@ class CliUi {
           stdout.writeln();
           _inThoughtBlock = false;
         }
-        stdout.write(text);
+        markdownPrinter.addDelta(text);
       },
       onToolCallStarted: (call) {
         _spinner.stop();
@@ -193,6 +194,7 @@ class CliUi {
           stdout.writeln();
           _inThoughtBlock = false;
         }
+        markdownPrinter.flush();
         final argsSummary = _formatToolArgsSummary(call.name, call.arguments);
         stdout.writeln();
         stdout.writeln('  ${theme.muted.text('╭─')} ${theme.warning.text('⚙')} ${theme.accent.text(call.name)} ${theme.secondary.text(argsSummary)} ${theme.muted.text('──────────────────────────────')}' );
@@ -216,6 +218,7 @@ class CliUi {
           stdout.writeln();
           _inThoughtBlock = false;
         }
+        markdownPrinter.flush();
         stdout.writeln();
         stdout.writeln('  ${theme.error.text('✖ Error:')} $error');
         stdout.writeln();
@@ -226,10 +229,12 @@ class CliUi {
       await agent.runTurn(prompt, callbacks: callbacks);
     } catch (e) {
       _spinner.stop();
+      markdownPrinter.flush();
       stdout.writeln();
       stdout.writeln('  ${theme.error.text('✖ Exception:')} $e');
     } finally {
       _spinner.stop();
+      markdownPrinter.flush();
       _isExecutingTurn = false;
     }
 

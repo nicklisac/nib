@@ -53,6 +53,27 @@ class MockProvider implements LLMProvider {
       return;
     }
 
+    // Check if user is asking for a table
+    if (userText.contains('table')) {
+      yield ThoughtDeltaEvent('Generating breakdown table...\n');
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      final tableMarkdown = 'Here is the summary table:\n\n'
+          '| Component | Status | Speed |\n'
+          '|:---|:---:|---:|\n'
+          '| `StreamingPrinter` | active | instant |\n'
+          '| `MarkdownRenderer` | active | fast |\n'
+          '| `PromptReader` | active | responsive |\n\n'
+          'All components are ready.';
+
+      for (final line in tableMarkdown.split('\n')) {
+        yield TextDeltaEvent('$line\n');
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      yield DoneEvent(finishReason: 'stop', promptTokens: 60, completionTokens: 40);
+      return;
+    }
+
     // Check if user is asking to list, read, or run something
     if (userText.contains('ls') || userText.contains('list') || userText.contains('files')) {
       yield ThoughtDeltaEvent('User requested file inspection. Invoking list_dir...\n');

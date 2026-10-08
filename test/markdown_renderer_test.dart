@@ -51,6 +51,110 @@ print("hello world");
       expect(rendered, contains('read_file'));
       // Check for table border glyphs
       expect(rendered, anyOf(contains('╭'), contains('┌'), contains('│')));
+
+      // Geometry check: All table lines should have the identical visible width
+      final tableLines = rendered
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.startsWith('╭') || l.startsWith('│') || l.startsWith('├') || l.startsWith('╰'))
+          .toList();
+      expect(tableLines, isNotEmpty);
+      final widths = tableLines.map((l) {
+        final clean = l.replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '');
+        return clean.runes.length;
+      }).toSet();
+      print('Table line widths: $widths');
+      expect(widths.length, equals(1), reason: 'All table rows must have matching widths: $widths');
+    });
+
+    test('renders user screenshot table with alignment markers', () {
+      const markdown = '''
+## Nib - Layer Breakdown
+
+| Layer | File | LOC | Verdict |
+|:------|:-------------------|----:|:-------:|
+| Harness | agent.dart | 184 | solid |
+| Context | compaction.dart | 242 | solid |
+| Session | session.dart | 225 | good |
+| Providers | anthropic_provider.dart | 226 | good |
+| Rendering | markdown_renderer.dart | 341 | new |
+| Tools | bash_tool.dart | 100 | good |
+''';
+
+      final rendered = MarkdownRenderer.render(markdown);
+      print('\n--- RENDERED TABLE ---\n$rendered\n----------------------\n');
+      expect(rendered, contains('Nib - Layer Breakdown'));
+      expect(rendered, contains('Harness'));
+      expect(rendered, contains('agent.dart'));
+      // Must NOT contain raw unrendered table delimiter
+      expect(rendered, isNot(contains('|:------|')));
+      // Must contain table borders
+      expect(rendered, anyOf(contains('╭'), contains('┌'), contains('│')));
+
+      // Geometry check: All table lines must have identical display widths
+      final tableLines = rendered
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.startsWith('╭') || l.startsWith('│') || l.startsWith('├') || l.startsWith('╰'))
+          .toList();
+      expect(tableLines, isNotEmpty);
+      final widths = tableLines.map((l) {
+        final clean = l.replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '');
+        return clean.runes.length;
+      }).toSet();
+      expect(widths.length, equals(1), reason: 'All table rows must have matching widths: $widths');
+    });
+
+    test('StreamingMarkdownPrinter renders streamed tokens with code fences and tables', () {
+      final buffer = StringBuffer();
+      final printer = StreamingMarkdownPrinter(
+        theme: NibTheme.tokyoNight,
+        out: (s) => buffer.write(s),
+      );
+
+      // Simulate streaming deltas chunk-by-chunk
+      final chunks = [
+        'Here is ',
+        'a breakdown:\n\n',
+        '## Files\n',
+        '| File | Type | Status |\n',
+        '|:---|:---:|---:|\n',
+        '| `main.dart` | entry | active |\n',
+        '| `test.dart` | `unit` | passed |\n\n',
+        'And some code:\n',
+        '```dart\n',
+        'void main() {\n',
+        '  print("streaming");\n',
+        '}\n',
+        '```\n',
+        'Done!',
+      ];
+
+      for (final chunk in chunks) {
+        printer.addDelta(chunk);
+      }
+      printer.flush();
+
+      final output = buffer.toString();
+      expect(output, contains('Files'));
+      expect(output, contains('main.dart'));
+      expect(output, contains('streaming'));
+      expect(output, contains('Done!'));
+      expect(output, isNot(contains('|:---|')));
+      expect(output, anyOf(contains('╭'), contains('│')));
+
+      // Geometry check on streamed table
+      final tableLines = output
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.startsWith('╭') || l.startsWith('│') || l.startsWith('├') || l.startsWith('╰'))
+          .toList();
+      expect(tableLines, isNotEmpty);
+      final widths = tableLines.map((l) {
+        final clean = l.replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '');
+        return clean.runes.length;
+      }).toSet();
+      expect(widths.length, equals(1), reason: 'All table lines in stream must match in width: $widths');
     });
   });
 }

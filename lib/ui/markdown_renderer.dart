@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:dart_console/dart_console.dart';
 import 'ansi.dart';
 import 'theme.dart';
@@ -5,103 +6,30 @@ import 'theme.dart';
 /// Formatter that decorates Markdown elements with ANSI escape codes for terminal CLI display.
 class MarkdownRenderer {
   /// Renders a full markdown string with terminal styling and TrueColor syntax highlighting.
-  static String render(String markdown) {
-    final theme = NibTheme.current;
-    final lines = markdown.split('\n');
+  static String render(String markdown, [NibTheme? theme]) {
+    final activeTheme = theme ?? NibTheme.current;
     final buffer = StringBuffer();
-    bool inCodeBlock = false;
-    String codeBlockLang = '';
-
-    for (int i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final trimmed = line.trim();
-
-      // Code block start / end
-      if (trimmed.startsWith('```')) {
-        if (!inCodeBlock) {
-          inCodeBlock = true;
-          codeBlockLang = trimmed.substring(3).trim().toLowerCase();
-          final langTag = codeBlockLang.isNotEmpty ? ' $codeBlockLang ' : ' code ';
-          buffer.writeln('  ${theme.muted.text('╭─')}${theme.accent.text(langTag)}${theme.muted.text('─────────────────────────────────────────╮')}');
-        } else {
-          inCodeBlock = false;
-          codeBlockLang = '';
-          buffer.writeln('  ${theme.muted.text('╰──────────────────────────────────────────────────╯')}');
-        }
-        continue;
-      }
-
-      if (inCodeBlock) {
-        // Indent and syntax-tint code block lines
-        buffer.writeln('  ${theme.muted.text('│')} ${_highlightCodeLine(line, codeBlockLang, theme)}');
-        continue;
-      }
-
-      // Headers
-      if (trimmed.startsWith('# ')) {
-        final title = trimmed.substring(2);
-        buffer.writeln();
-        buffer.writeln('  ${Ansi.boldText(theme.accent.text(title))}');
-        buffer.writeln('  ${theme.muted.text('━' * (title.length + 2))}');
-        continue;
-      } else if (trimmed.startsWith('## ')) {
-        final title = trimmed.substring(3);
-        buffer.writeln();
-        buffer.writeln('  ${Ansi.boldText(theme.secondary.text(title))}');
-        buffer.writeln('  ${theme.muted.text('─' * (title.length + 2))}');
-        continue;
-      } else if (trimmed.startsWith('### ')) {
-        final title = trimmed.substring(4);
-        buffer.writeln();
-        buffer.writeln('  ${Ansi.boldText(theme.info.text(title))}');
-        continue;
-      }
-
-      // Markdown Tables
-      if (_isTableStart(lines, i)) {
-        final (tableOutput, nextIndex) = _renderTable(lines, i, theme);
-        buffer.write(tableOutput);
-        i = nextIndex - 1;
-        continue;
-      }
-
-      // Bullet lists
-      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-        final content = trimmed.substring(2);
-        buffer.writeln('  ${theme.accent.text('•')} ${_formatInline(content, theme)}');
-        continue;
-      }
-
-      // Numbered lists
-      final numMatch = RegExp(r'^(\d+\.)\s+(.+)$').firstMatch(trimmed);
-      if (numMatch != null) {
-        final numPart = numMatch.group(1)!;
-        final rest = numMatch.group(2)!;
-        buffer.writeln('  ${theme.accent.text(numPart)} ${_formatInline(rest, theme)}');
-        continue;
-      }
-
-      // Blockquotes
-      if (trimmed.startsWith('> ')) {
-        buffer.writeln('  ${theme.muted.text('│')} ${theme.muted.text(trimmed.substring(2))}');
-        continue;
-      }
-
-      // Regular line with inline formatting
-      buffer.writeln(_formatInline(line, theme));
-    }
-
+    final printer = StreamingMarkdownPrinter(
+      theme: activeTheme,
+      out: (s) => buffer.write(s),
+    );
+    printer.addDelta(markdown);
+    printer.flush();
     return buffer.toString().trimRight();
   }
 
   /// Highlights inline elements like `code`, **bold**, *italic*, and [links](url).
-  static String _formatInline(String text, NibTheme theme) {
+  ///
+  /// When [inTable] is true, inline code does not have extra padding spaces added,
+  /// preserving column alignment and exact cell widths in table grids.
+  static String formatInline(String text, NibTheme theme, {bool inTable = false}) {
     var result = text;
 
     // Inline code `...`
     result = result.replaceAllMapped(RegExp(r'`([^`]+)`'), (match) {
       final code = match.group(1)!;
-      return '${theme.surface.bg}${theme.code.fg} $code \x1B[0m';
+      final pad = inTable ? '' : ' ';
+      return '${theme.surface.bg}${theme.code.fg}$pad$code$pad\x1B[0m';
     });
 
     // Bold **...**
@@ -127,7 +55,7 @@ class MarkdownRenderer {
   }
 
   /// Multi-language syntax tinting based on detected code block language.
-  static String _highlightCodeLine(String line, String lang, NibTheme theme) {
+  static String highlightCodeLine(String line, String lang, NibTheme theme) {
     var res = line;
 
     // Comments
@@ -237,35 +165,39 @@ class MarkdownRenderer {
     }
   }
 
-  static bool _isTableStart(List<String> lines, int i) {
+  static bool isTableStart(List<String> lines, int i) {
     if (i + 1 >= lines.length) return false;
     final current = lines[i].trim();
     final next = lines[i + 1].trim();
     if (!current.contains('|') || !next.contains('|') || !next.contains('-')) {
       return false;
     }
-    return _isDelimiterRow(next);
+    return isDelimiterRow(next);
   }
 
-  static bool _isDelimiterRow(String line) {
-    final cells = _splitRow(line);
+  static bool isDelimiterRow(String line) {
+    final cells = splitRow(line);
     if (cells.isEmpty) return false;
     return cells.every((cell) => RegExp(r'^\s*:?-{2,}:?\s*$').hasMatch(cell));
   }
 
-  static List<String> _splitRow(String row) {
+  static List<String> splitRow(String row) {
     var trimmed = row.trim();
     if (trimmed.startsWith('|')) trimmed = trimmed.substring(1);
     if (trimmed.endsWith('|')) trimmed = trimmed.substring(0, trimmed.length - 1);
     return trimmed.split('|').map((c) => c.trim()).toList();
   }
 
-  static (String, int) _renderTable(List<String> lines, int startIndex, NibTheme theme) {
-    final headerLine = lines[startIndex].trim();
-    final delimLine = lines[startIndex + 1].trim();
+  /// Renders a full markdown table from a list of markdown lines with rounded unicode borders.
+  static String renderTable(List<String> lines, [NibTheme? theme]) {
+    final activeTheme = theme ?? NibTheme.current;
+    if (lines.length < 2) return lines.join('\n');
 
-    final rawHeaders = _splitRow(headerLine);
-    final delimCells = _splitRow(delimLine);
+    final headerLine = lines[0].trim();
+    final delimLine = lines[1].trim();
+
+    final rawHeaders = splitRow(headerLine);
+    final delimCells = splitRow(delimLine);
 
     final columnCount = rawHeaders.length;
     final alignments = <TextAlignment>[];
@@ -291,36 +223,33 @@ class MarkdownRenderer {
       ..headerStyle = FontStyle.bold;
 
     for (int col = 0; col < columnCount; col++) {
-      final headerText = _formatInline(rawHeaders[col], theme);
+      final headerText = formatInline(rawHeaders[col], activeTheme, inTable: true);
       table.insertColumn(
         header: headerText,
         alignment: alignments[col],
       );
     }
 
-    int currentIndex = startIndex + 2;
     final rows = <List<String>>[];
-
-    while (currentIndex < lines.length) {
-      final line = lines[currentIndex].trim();
+    for (int i = 2; i < lines.length; i++) {
+      final line = lines[i].trim();
       if (line.isEmpty || line.startsWith('```') || !line.contains('|')) {
-        break;
+        continue;
       }
-      if (_isDelimiterRow(line)) {
-        break;
+      if (isDelimiterRow(line)) {
+        continue;
       }
 
-      final cells = _splitRow(line);
+      final cells = splitRow(line);
       final row = <String>[];
       for (int col = 0; col < columnCount; col++) {
         if (col < cells.length) {
-          row.add(_formatInline(cells[col], theme));
+          row.add(formatInline(cells[col], activeTheme, inTable: true));
         } else {
           row.add('');
         }
       }
       rows.add(row);
-      currentIndex++;
     }
 
     if (rows.isNotEmpty) {
@@ -336,6 +265,206 @@ class MarkdownRenderer {
       }
     }
 
-    return (buf.toString(), currentIndex);
+    return buf.toString();
+  }
+}
+
+/// Buffers and renders incoming streaming tokens in real time, handling line formatting,
+/// code-fence boxes with syntax highlighting, and Unicode rounded tables.
+class StreamingMarkdownPrinter {
+  final NibTheme theme;
+  final void Function(String text) _out;
+
+  String _charBuffer = '';
+  bool _inCodeBlock = false;
+  String _codeBlockLang = '';
+  final List<String> _pendingTableLines = [];
+
+  StreamingMarkdownPrinter({NibTheme? theme, void Function(String text)? out})
+      : theme = theme ?? NibTheme.current,
+        _out = out ?? stdout.write;
+
+  /// Adds an incoming token or text delta from the model stream.
+  void addDelta(String delta) {
+    _charBuffer += delta;
+
+    while (_charBuffer.contains('\n')) {
+      final newlineIndex = _charBuffer.indexOf('\n');
+      final line = _charBuffer.substring(0, newlineIndex);
+      _charBuffer = _charBuffer.substring(newlineIndex + 1);
+      _processLine(line);
+    }
+  }
+
+  void _processLine(String line) {
+    // Inside a code fence, lines are code (even if they contain pipes)
+    if (_inCodeBlock) {
+      _emitFormattedLine(line);
+      return;
+    }
+
+    final trimmed = line.trim();
+
+    // If we have pending table lines:
+    if (_pendingTableLines.isNotEmpty) {
+      if (_pendingTableLines.length == 1) {
+        // Line 1 was buffered. Is this line the delimiter row?
+        if (MarkdownRenderer.isDelimiterRow(line)) {
+          _pendingTableLines.add(line);
+          return;
+        } else {
+          // Not a table! Flush the buffered first line as normal markdown.
+          final first = _pendingTableLines.removeAt(0);
+          _emitFormattedLine(first);
+          // Fall through to evaluate the current line below.
+        }
+      } else {
+        // We have header + delimiter (+ optionally some rows).
+        // Is this line another row of the table?
+        final isRow = trimmed.isNotEmpty &&
+            trimmed.contains('|') &&
+            !trimmed.startsWith('```') &&
+            !MarkdownRenderer.isDelimiterRow(line);
+
+        if (isRow) {
+          _pendingTableLines.add(line);
+          return;
+        } else {
+          // Table ended! Render and flush the table.
+          _renderAndFlushPendingTable();
+          // Fall through to evaluate the current line below.
+        }
+      }
+    }
+
+    // Check if this line could be the start of a table
+    if (trimmed.isNotEmpty &&
+        trimmed.contains('|') &&
+        !trimmed.startsWith('```')) {
+      _pendingTableLines.add(line);
+      return;
+    }
+
+    // Normal line
+    _emitFormattedLine(line);
+  }
+
+  void _emitFormattedLine(String line) {
+    final trimmed = line.trim();
+
+    // Code block start / end
+    if (trimmed.startsWith('```')) {
+      if (!_inCodeBlock) {
+        _inCodeBlock = true;
+        _codeBlockLang = trimmed.substring(3).trim().toLowerCase();
+        final langTag = _codeBlockLang.isNotEmpty ? ' $_codeBlockLang ' : ' code ';
+        _out('  ${theme.muted.text('╭─')}${theme.accent.text(langTag)}${theme.muted.text('─────────────────────────────────────────╮')}\n');
+      } else {
+        _inCodeBlock = false;
+        _codeBlockLang = '';
+        _out('  ${theme.muted.text('╰──────────────────────────────────────────────────╯')}\n');
+      }
+      return;
+    }
+
+    if (_inCodeBlock) {
+      if (line.isEmpty) {
+        _out('  ${theme.muted.text('│')}\n');
+      } else {
+        _out('  ${theme.muted.text('│')} ${MarkdownRenderer.highlightCodeLine(line, _codeBlockLang, theme)}\n');
+      }
+      return;
+    }
+
+    // Headers
+    if (trimmed.startsWith('# ')) {
+      final title = trimmed.substring(2);
+      _out('\n  ${Ansi.boldText(theme.accent.text(title))}\n  ${theme.muted.text('━' * (title.length + 2))}\n');
+      return;
+    } else if (trimmed.startsWith('## ')) {
+      final title = trimmed.substring(3);
+      _out('\n  ${Ansi.boldText(theme.secondary.text(title))}\n  ${theme.muted.text('─' * (title.length + 2))}\n');
+      return;
+    } else if (trimmed.startsWith('### ')) {
+      final title = trimmed.substring(4);
+      _out('\n  ${Ansi.boldText(theme.info.text(title))}\n');
+      return;
+    }
+
+    // Bullet lists
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      final content = trimmed.substring(2);
+      _out('  ${theme.accent.text('•')} ${MarkdownRenderer.formatInline(content, theme)}\n');
+      return;
+    }
+
+    // Numbered lists
+    final numMatch = RegExp(r'^(\d+\.)\s+(.+)$').firstMatch(trimmed);
+    if (numMatch != null) {
+      final numPart = numMatch.group(1)!;
+      final rest = numMatch.group(2)!;
+      _out('  ${theme.accent.text(numPart)} ${MarkdownRenderer.formatInline(rest, theme)}\n');
+      return;
+    }
+
+    // Blockquotes
+    if (trimmed.startsWith('> ')) {
+      _out('  ${theme.muted.text('│')} ${theme.muted.text(trimmed.substring(2))}\n');
+      return;
+    }
+
+    // Empty line
+    if (trimmed.isEmpty) {
+      _out('\n');
+      return;
+    }
+
+    // Regular line with inline formatting
+    _out('${MarkdownRenderer.formatInline(line, theme)}\n');
+  }
+
+  void _renderAndFlushPendingTable() {
+    if (_pendingTableLines.isEmpty) return;
+    final tableOutput = MarkdownRenderer.renderTable(_pendingTableLines, theme);
+    _out(tableOutput);
+    _pendingTableLines.clear();
+  }
+
+  /// Flushes any buffered content at the end of a stream turn or before tool execution.
+  void flush() {
+    if (_pendingTableLines.isNotEmpty) {
+      if (_pendingTableLines.length >= 2 &&
+          _charBuffer.trim().isNotEmpty &&
+          _charBuffer.contains('|')) {
+        _pendingTableLines.add(_charBuffer);
+        _charBuffer = '';
+      }
+
+      if (_pendingTableLines.length >= 2 &&
+          MarkdownRenderer.isDelimiterRow(_pendingTableLines[1])) {
+        _renderAndFlushPendingTable();
+      } else {
+        for (final line in _pendingTableLines) {
+          _emitFormattedLine(line);
+        }
+        _pendingTableLines.clear();
+      }
+    }
+
+    if (_charBuffer.isNotEmpty) {
+      final text = _charBuffer;
+      _charBuffer = '';
+      if (_inCodeBlock) {
+        _out('  ${theme.muted.text('│')} ${MarkdownRenderer.highlightCodeLine(text, _codeBlockLang, theme)}\n');
+      } else {
+        _out(MarkdownRenderer.formatInline(text, theme));
+      }
+    }
+
+    if (_inCodeBlock) {
+      _out('  ${theme.muted.text('╰──────────────────────────────────────────────────╯')}\n');
+      _inCodeBlock = false;
+      _codeBlockLang = '';
+    }
   }
 }
