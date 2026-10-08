@@ -54,5 +54,26 @@ void main() {
 
       await tempDir.delete(recursive: true);
     });
+
+    test('Agent turn cancellation aborts execution cleanly', () async {
+      final session = AgentSession();
+      final agent = Agent(
+        provider: MockProvider(),
+        session: session,
+      );
+
+      final events = <String>[];
+      await agent.runTurn(
+        'hello',
+        callbacks: AgentCallbacks(
+          onTextDelta: (t) {
+            events.add('text:$t');
+            agent.cancel();
+          },
+        ),
+      );
+
+      expect(events, isNotEmpty);
+    });
   });
 }

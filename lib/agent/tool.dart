@@ -12,6 +12,12 @@ abstract class AgentTool {
   /// Executes the tool with the given arguments and returns the result string.
   Future<String> execute(Map<String, dynamic> arguments);
 
+  /// Called if the active turn is cancelled by the user.
+  void cancel() {}
+
+  /// Optional callback invoked when the tool produces live progress or output lines.
+  void Function(String line)? onProgress;
+
   /// Converts the tool definition into standard OpenAI tool specification.
   Map<String, dynamic> toOpenAiSchema() => {
         'type': 'function',

@@ -12,6 +12,7 @@ class AgentCallbacks {
   final void Function(String thought)? onThoughtDelta;
   final void Function(ToolCall toolCall)? onToolCallStarted;
   final void Function(ToolCall toolCall, String result, Duration duration)? onToolCallFinished;
+  final void Function(ToolCall toolCall, String line)? onToolProgress;
   final void Function(String error)? onError;
 
   AgentCallbacks({
@@ -19,6 +20,7 @@ class AgentCallbacks {
     this.onThoughtDelta,
     this.onToolCallStarted,
     this.onToolCallFinished,
+    this.onToolProgress,
     this.onError,
   });
 }
@@ -47,10 +49,21 @@ class Agent {
 
   List<AgentTool> get tools => _tools.values.toList();
   bool _isCancelled = false;
+  StreamSubscription? _activeStreamSub;
+  Completer<void>? _turnStreamCompleter;
 
-  /// Cancels the currently running turn.
+  /// Cancels the currently running turn and any active tool processes.
   void cancel() {
     _isCancelled = true;
+    _activeStreamSub?.cancel();
+    _activeStreamSub = null;
+    if (_turnStreamCompleter != null && !_turnStreamCompleter!.isCompleted) {
+      _turnStreamCompleter!.complete();
+    }
+    _turnStreamCompleter = null;
+    for (final tool in _tools.values) {
+      tool.cancel();
+    }
   }
 
   /// Runs the full agent loop for the provided user message.
@@ -84,35 +97,59 @@ class Agent {
       );
 
       bool hasError = false;
+      final completer = Completer<void>();
+      _turnStreamCompleter = completer;
 
-      await for (final event in stream) {
-        switch (event) {
-          case TextDeltaEvent(:final text):
-            textBuffer.write(text);
-            callbacks?.onTextDelta?.call(text);
+      _activeStreamSub = stream.listen(
+        (event) {
+          if (_isCancelled) {
+            _activeStreamSub?.cancel();
+            if (!completer.isCompleted) completer.complete();
+            return;
+          }
+          switch (event) {
+            case TextDeltaEvent(:final text):
+              textBuffer.write(text);
+              callbacks?.onTextDelta?.call(text);
 
-          case ThoughtDeltaEvent(:final thought):
-            thoughtBuffer.write(thought);
-            callbacks?.onThoughtDelta?.call(thought);
+            case ThoughtDeltaEvent(:final thought):
+              thoughtBuffer.write(thought);
+              callbacks?.onThoughtDelta?.call(thought);
 
-          case ToolCallCompleteEvent(:final toolCall):
-            toolCalls.add(toolCall);
+            case ToolCallCompleteEvent(:final toolCall):
+              toolCalls.add(toolCall);
 
-          case DoneEvent(
-              finishReason: final fr,
-              promptTokens: final pt,
-              completionTokens: final ct,
-            ):
-            lastFinishReason = fr;
-            session.recordUsage(pt, ct);
+            case DoneEvent(
+                finishReason: final fr,
+                promptTokens: final pt,
+                completionTokens: final ct,
+              ):
+              lastFinishReason = fr;
+              session.recordUsage(pt, ct);
 
-          case ErrorEvent(:final message):
+            case ErrorEvent(:final message):
+              hasError = true;
+              callbacks?.onError?.call(message);
+          }
+        },
+        onError: (e) {
+          if (!_isCancelled) {
             hasError = true;
-            callbacks?.onError?.call(message);
-        }
-      }
+            callbacks?.onError?.call(e.toString());
+          }
+          if (!completer.isCompleted) completer.complete();
+        },
+        onDone: () {
+          if (!completer.isCompleted) completer.complete();
+        },
+        cancelOnError: true,
+      );
 
-      if (hasError) {
+      await completer.future;
+      _activeStreamSub = null;
+      _turnStreamCompleter = null;
+
+      if (_isCancelled || hasError) {
         return;
       }
 
@@ -126,15 +163,20 @@ class Agent {
       );
 
       // If no tool calls were requested, this turn is done!
-      if (toolCalls.isEmpty) {
+      if (toolCalls.isEmpty || _isCancelled) {
         break;
       }
 
       // Execute requested tools
       for (final call in toolCalls) {
+        if (_isCancelled) break;
         callbacks?.onToolCallStarted?.call(call);
 
         final tool = _tools[call.name];
+        tool?.onProgress = (line) {
+          callbacks?.onToolProgress?.call(call, line);
+        };
+
         String result;
         final stopwatch = Stopwatch()..start();
 
@@ -148,8 +190,14 @@ class Agent {
           }
         }
         stopwatch.stop();
-        session.toolExecutionsCount++;
+        tool?.onProgress = null;
 
+        if (_isCancelled) {
+          callbacks?.onToolCallFinished?.call(call, 'Cancelled', stopwatch.elapsed);
+          break;
+        }
+
+        session.toolExecutionsCount++;
         callbacks?.onToolCallFinished?.call(call, result, stopwatch.elapsed);
 
         // Add tool result to transcript (safely truncated if oversized)

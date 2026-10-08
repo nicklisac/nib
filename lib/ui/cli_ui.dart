@@ -11,6 +11,7 @@ import 'prompt_reader.dart';
 import 'slash_commands.dart';
 import 'spinner.dart';
 import 'status_bar.dart';
+import 'terminal_manager.dart';
 import 'theme.dart';
 
 /// The upgraded pure terminal CLI UI for Nib.
@@ -104,7 +105,7 @@ class CliUi {
 
   /// Handles multi-line input (if ends with `\` or wrapped in `"""`).
   Future<String?> _readMultiLineInput(String prompt) async {
-    String? firstLine = _promptReader.readLine(prompt: prompt);
+    String? firstLine = await _promptReader.readLine(prompt: prompt);
     if (firstLine == null) return null;
 
     final theme = NibTheme.current;
@@ -119,7 +120,7 @@ class CliUi {
       buffer.writeln(remainder);
 
       while (true) {
-        final line = _promptReader.readLine(prompt: '${theme.muted.text('...')} ${theme.secondary.text('❯')} ');
+        final line = await _promptReader.readLine(prompt: '${theme.muted.text('...')} ${theme.secondary.text('❯')} ');
         if (line == null) break;
         if (line.trim().endsWith('"""')) {
           buffer.writeln(line.trim().substring(0, line.trim().length - 3));
@@ -136,7 +137,7 @@ class CliUi {
       buffer.writeln(firstLine.trim().substring(0, firstLine.trim().length - 1).trim());
 
       while (true) {
-        final nextLine = _promptReader.readLine(prompt: '${theme.muted.text('...')} ${theme.secondary.text('❯')} ');
+        final nextLine = await _promptReader.readLine(prompt: '${theme.muted.text('...')} ${theme.secondary.text('❯')} ');
         if (nextLine == null) break;
         if (nextLine.trim().endsWith('\\')) {
           buffer.writeln(nextLine.trim().substring(0, nextLine.trim().length - 1).trim());
@@ -212,6 +213,14 @@ class CliUi {
         stdout.writeln('  ${theme.muted.text('╰─')} ${theme.success.text('✔')} ${theme.muted.text('done (${ms}ms)')} ${theme.muted.text('──────────────────────────────────────')}' );
         stdout.writeln();
       },
+      onToolProgress: (call, line) {
+        final clean = line.replaceAll(RegExp(r'\x1B\[[0-9;]*[a-zA-Z]'), '').trim();
+        if (clean.isNotEmpty) {
+          const maxLen = 45;
+          final short = clean.length > maxLen ? '${clean.substring(0, maxLen)}...' : clean;
+          _spinner.updateMessage('${call.name}: $short');
+        }
+      },
       onError: (error) {
         _spinner.stop();
         if (_inThoughtBlock) {
@@ -225,6 +234,22 @@ class CliUi {
       },
     );
 
+    StreamSubscription<Key>? keySub;
+    if (stdin.hasTerminal) {
+      TerminalManager.instance.initialize();
+      keySub = TerminalManager.instance.keyStream.listen((key) {
+        if (key.isControl &&
+            (key.controlChar == ControlCharacter.escape ||
+             key.controlChar == ControlCharacter.ctrlC)) {
+          _spinner.stop();
+          agent.cancel();
+          TerminalManager.instance.clearBuffer();
+          final keyName = key.controlChar == ControlCharacter.escape ? 'Esc' : 'Ctrl+C';
+          stdout.writeln('\n  ${theme.warning.text('⚠ Turn cancelled by user ($keyName).')}');
+        }
+      });
+    }
+
     try {
       await agent.runTurn(prompt, callbacks: callbacks);
     } catch (e) {
@@ -233,9 +258,11 @@ class CliUi {
       stdout.writeln();
       stdout.writeln('  ${theme.error.text('✖ Exception:')} $e');
     } finally {
+      await keySub?.cancel();
       _spinner.stop();
       markdownPrinter.flush();
       _isExecutingTurn = false;
+      TerminalManager.instance.clearBuffer();
     }
 
     stdout.writeln();

@@ -18,6 +18,7 @@ import 'package:nib/tools/write_file_tool.dart';
 import 'package:nib/ui/ansi.dart';
 import 'package:nib/ui/cli_ui.dart';
 import 'package:nib/ui/session_picker.dart';
+import 'package:nib/ui/terminal_manager.dart';
 import 'package:nib/ui/theme.dart';
 
 void main(List<String> arguments) async {
@@ -229,16 +230,22 @@ void main(List<String> arguments) async {
 
   final ui = CliUi(agent, config);
 
-  // If user provided a prompt as trailing arguments (e.g. nib "list files")
-  final remaining = results.rest;
-  if (remaining.isNotEmpty) {
-    final prompt = remaining.join(' ');
-    stdout.writeln(Ansi.banner(model: provider.model, provider: provider.name, workspace: workspace));
-    stdout.writeln('${NibTheme.current.accent.text('nib')} ${NibTheme.current.secondary.text('❯')} $prompt');
-    await ui.runWithPrompt(prompt);
-    exit(0);
-  }
+  TerminalManager.instance.initialize();
+  try {
+    // If user provided a prompt as trailing arguments (e.g. nib "list files")
+    final remaining = results.rest;
+    if (remaining.isNotEmpty) {
+      final prompt = remaining.join(' ');
+      stdout.writeln(Ansi.banner(model: provider.model, provider: provider.name, workspace: workspace));
+      stdout.writeln('${NibTheme.current.accent.text('nib')} ${NibTheme.current.secondary.text('❯')} $prompt');
+      await ui.runWithPrompt(prompt);
+      TerminalManager.instance.dispose();
+      exit(0);
+    }
 
-  // Interactive CLI REPL
-  await ui.run();
+    // Interactive CLI REPL
+    await ui.run();
+  } finally {
+    TerminalManager.instance.dispose();
+  }
 }

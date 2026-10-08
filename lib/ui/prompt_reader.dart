@@ -4,6 +4,7 @@ import 'package:dart_console/dart_console.dart';
 import 'package:path/path.dart' as p;
 import 'ansi.dart';
 import 'autocomplete.dart';
+import 'terminal_manager.dart';
 import 'theme.dart';
 
 /// Interactive terminal prompt reader supporting persistent history, live command palette,
@@ -71,7 +72,7 @@ class PromptReader {
   int _paletteLines = 0;
 
   /// Reads a line from terminal stdin with live command palette when typing `/`.
-  String? readLine({required String prompt}) {
+  Future<String?> readLine({required String prompt}) async {
     if (!stdin.hasTerminal) {
       stdout.write(prompt);
       return stdin.readLineSync();
@@ -87,7 +88,7 @@ class PromptReader {
     var paletteIndex = 0;
 
     while (true) {
-      final key = _console.readKey();
+      final key = await TerminalManager.instance.nextKey();
 
       // Check if command palette is active
       final isSlashCommandMode = buffer.startsWith('/') && !buffer.contains(' ');

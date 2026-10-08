@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'package:dart_console/dart_console.dart';
 import '../ui/ansi.dart';
 import '../ui/diff_formatter.dart';
+import '../ui/terminal_manager.dart';
 import '../ui/theme.dart';
 
 /// Manages interactive user approval for file changes and destructive commands.
@@ -24,14 +26,19 @@ class ApprovalManager {
 
     while (true) {
       stdout.write('  ${theme.secondary.text('Apply this change?')} ${theme.muted.text('[y: yes, n: no, d: show diff]')} ${theme.accent.text('❯')} ');
-      final input = stdin.readLineSync()?.trim().toLowerCase();
+      final key = await TerminalManager.instance.nextKey();
+      final char = key.isControl
+          ? (key.controlChar == ControlCharacter.enter ? 'y' : '')
+          : key.char.toLowerCase();
 
-      if (input == 'y' || input == 'yes' || input == '') {
+      stdout.writeln(char.isNotEmpty ? char : (key.isControl ? key.controlChar.name : ''));
+
+      if (char == 'y' || char == '') {
         return true;
-      } else if (input == 'n' || input == 'no') {
+      } else if (char == 'n' || (key.isControl && key.controlChar == ControlCharacter.escape)) {
         stdout.writeln('  ${theme.error.text('✖ Change rejected by user.')}');
         return false;
-      } else if (input == 'd' || input == 'diff') {
+      } else if (char == 'd') {
         final diff = DiffFormatter.formatDiff(oldContent, newContent);
         stdout.writeln();
         for (final line in diff) {
@@ -57,7 +64,11 @@ class ApprovalManager {
     stdout.writeln('    ${theme.code.text(command)}');
     stdout.write('  ${theme.secondary.text('Execute?')} ${theme.muted.text('[y/n]')} ${theme.accent.text('❯')} ');
 
-    final input = stdin.readLineSync()?.trim().toLowerCase();
-    return input == 'y' || input == 'yes';
+    final key = await TerminalManager.instance.nextKey();
+    final char = key.isControl
+        ? (key.controlChar == ControlCharacter.enter ? 'y' : '')
+        : key.char.toLowerCase();
+    stdout.writeln(char.isNotEmpty ? char : '');
+    return char == 'y' || char == '';
   }
 }

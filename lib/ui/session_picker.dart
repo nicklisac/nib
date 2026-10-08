@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dart_console/dart_console.dart';
 import '../agent/session.dart';
+import 'terminal_manager.dart';
 import 'theme.dart';
 
 /// Interactive arrow-key navigation session picker for resuming saved conversations.
@@ -32,7 +33,7 @@ class SessionPicker {
     _renderMenu(items, selectedIndex, currentSession?.id, theme);
 
     while (true) {
-      final key = _console.readKey();
+      final key = await TerminalManager.instance.nextKey();
 
       if (key.isControl) {
         switch (key.controlChar) {

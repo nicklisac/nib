@@ -7,9 +7,25 @@ import '../agent/tool.dart';
 /// Tool for executing bash shell commands.
 class BashTool extends AgentTool {
   final String workingDirectory;
+  Process? _activeProcess;
 
   BashTool({String? workingDirectory})
       : workingDirectory = workingDirectory ?? Directory.current.path;
+
+  @override
+  void cancel() {
+    try {
+      final proc = _activeProcess;
+      if (proc != null) {
+        proc.kill(ProcessSignal.sigterm);
+        Timer(const Duration(milliseconds: 500), () {
+          try {
+            proc.kill(ProcessSignal.sigkill);
+          } catch (_) {}
+        });
+      }
+    } catch (_) {}
+  }
 
   @override
   String get name => 'bash';
@@ -49,29 +65,67 @@ class BashTool extends AgentTool {
     }
 
     try {
-      final result = await Process.run(
+      final process = await Process.start(
         'bash',
         ['-c', command],
         workingDirectory: workingDirectory,
         runInShell: true,
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      ).timeout(
-        Duration(seconds: timeoutSeconds),
-        onTimeout: () => ProcessResult(
-          -1,
-          -1,
-          '',
-          '[Command timed out after $timeoutSeconds seconds]',
-        ),
       );
+      _activeProcess = process;
 
-      final out = result.stdout.toString();
-      final err = result.stderr.toString();
-      final exitCode = result.exitCode;
+      final outBuffer = StringBuffer();
+      final errBuffer = StringBuffer();
+
+      final outSub = process.stdout
+          .transform(utf8.decoder)
+          .listen((chunk) {
+            outBuffer.write(chunk);
+            if (onProgress != null) {
+              final lastLine = chunk.trim().split('\n').lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+              if (lastLine.isNotEmpty) {
+                onProgress!(lastLine);
+              }
+            }
+          });
+
+      final errSub = process.stderr
+          .transform(utf8.decoder)
+          .listen((chunk) {
+            errBuffer.write(chunk);
+            if (onProgress != null) {
+              final lastLine = chunk.trim().split('\n').lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+              if (lastLine.isNotEmpty) {
+                onProgress!(lastLine);
+              }
+            }
+          });
+
+      bool timedOut = false;
+      final timer = Timer(Duration(seconds: timeoutSeconds), () {
+        timedOut = true;
+        try {
+          process.kill(ProcessSignal.sigterm);
+          Timer(const Duration(seconds: 2), () {
+            try {
+              process.kill(ProcessSignal.sigkill);
+            } catch (_) {}
+          });
+        } catch (_) {}
+      });
+
+      final exitCode = await process.exitCode;
+      timer.cancel();
+      await Future.wait([outSub.asFuture(), errSub.asFuture()]);
+      _activeProcess = null;
+
+      final out = outBuffer.toString();
+      final err = errBuffer.toString();
+
+      if (timedOut) {
+        return '[Command timed out after $timeoutSeconds seconds]\n$out\n$err'.trim();
+      }
 
       final buffer = StringBuffer();
-
       if (out.isNotEmpty) {
         buffer.write(out);
       }
@@ -94,6 +148,7 @@ class BashTool extends AgentTool {
 
       return fullOutput;
     } catch (e) {
+      _activeProcess = null;
       return 'Error executing command: $e';
     }
   }
