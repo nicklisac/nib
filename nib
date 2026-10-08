@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Nib - Dart Terminal Coding Agent CLI Runner
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+exec dart run "$SCRIPT_DIR/bin/nib.dart" "$@"

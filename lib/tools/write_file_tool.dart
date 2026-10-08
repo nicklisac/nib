@@ -1,0 +1,68 @@
+import 'dart:io';
+import 'package:path/path.dart' as p;
+import '../agent/tool.dart';
+import '../agent/undo_manager.dart';
+
+/// Tool for creating or overwriting files.
+class WriteFileTool extends AgentTool {
+  final String workingDirectory;
+
+  WriteFileTool({String? workingDirectory})
+      : workingDirectory = workingDirectory ?? Directory.current.path;
+
+  @override
+  String get name => 'write_file';
+
+  @override
+  String get description =>
+      'Create a new file or completely overwrite an existing file with the provided content.';
+
+  @override
+  Map<String, dynamic> get parameters => {
+        'type': 'object',
+        'properties': {
+          'path': {
+            'type': 'string',
+            'description': 'The path of the file to write (relative or absolute).',
+          },
+          'content': {
+            'type': 'string',
+            'description': 'The complete text content to write to the file.',
+          },
+        },
+        'required': ['path', 'content'],
+      };
+
+  @override
+  Future<String> execute(Map<String, dynamic> arguments) async {
+    final rawPath = arguments['path'] as String?;
+    final content = arguments['content'] as String?;
+
+    if (rawPath == null || rawPath.trim().isEmpty) {
+      return 'Error: Path argument is required';
+    }
+    if (content == null) {
+      return 'Error: Content argument is required';
+    }
+
+    final fullPath = p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath);
+    final file = File(fullPath);
+
+    try {
+      final beforeContent = await file.exists() ? await file.readAsString() : '';
+      await file.parent.create(recursive: true);
+      await file.writeAsString(content);
+
+      UndoManager.instance.recordEdit(
+        path: fullPath,
+        contentBefore: beforeContent,
+        contentAfter: content,
+      );
+
+      final lineCount = content.split('\n').length;
+      return 'Successfully wrote $lineCount lines to "$rawPath" (${content.length} bytes)';
+    } catch (e) {
+      return 'Error writing to file "$rawPath": $e';
+    }
+  }
+}

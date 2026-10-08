@@ -1,0 +1,16 @@
+# Created by `dart pub`
+.dart_tool/
+.packages
+build/
+
+# Local credentials & configs
+*.local
+*.env
+.env*
+
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
