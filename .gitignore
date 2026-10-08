@@ -19,7 +19,7 @@ build/
 .vscode/
 *.swp
 *~
-tool/
 
 # Throwaway prototypes (e.g. the #22 ambient-line prototype on branch
 # prototype/ambient-line). Keep them out of main; capture on a branch instead.
+tool/
