@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'package:yaml/yaml.dart';
 
 /// Represents a modular agent capability or skill loaded from a SKILL.md definition.
 class Skill {
@@ -99,17 +100,20 @@ class SkillsManager {
       if (raw.startsWith('---')) {
         final secondIndex = raw.indexOf('---', 3);
         if (secondIndex != -1) {
-          final frontmatter = raw.substring(3, secondIndex).trim();
+          final frontmatterStr = raw.substring(3, secondIndex).trim();
           body = raw.substring(secondIndex + 3).trim();
 
-          for (final line in frontmatter.split('\n')) {
-            final trimmed = line.trim();
-            if (trimmed.startsWith('name:')) {
-              name = _stripQuotes(trimmed.substring(5).trim());
-            } else if (trimmed.startsWith('description:')) {
-              description = _stripQuotes(trimmed.substring(12).trim());
+          try {
+            final parsedYaml = loadYaml(frontmatterStr);
+            if (parsedYaml is Map) {
+              if (parsedYaml.containsKey('name')) {
+                name = parsedYaml['name']?.toString() ?? name;
+              }
+              if (parsedYaml.containsKey('description')) {
+                description = parsedYaml['description']?.toString() ?? description;
+              }
             }
-          }
+          } catch (_) {}
         }
       }
 

@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:dart_console/dart_console.dart';
+import 'package:val_highlight/languages/all.dart';
+import 'package:val_highlight/val_highlight.dart';
 import 'ansi.dart';
 import 'theme.dart';
 
@@ -74,143 +76,51 @@ class MarkdownRenderer {
     return result;
   }
 
-  /// Multi-language syntax tinting using a robust single-pass lexer to prevent ANSI mangling.
+  static final Highlighter _highlighter = Highlighter(registry: allLanguagesRegistry());
+
+  /// Multi-language syntax tinting using val_highlight across 55+ languages.
   static String highlightCodeLine(String line, String lang, NibTheme theme) {
     if (line.isEmpty) return line;
 
-    // Fast-path full-line comments
-    final trimmed = line.trim();
-    if (trimmed.startsWith('//') ||
-        trimmed.startsWith('/*') ||
-        trimmed.startsWith('--') ||
-        ((lang == 'py' || lang == 'python' || lang == 'bash' || lang == 'sh' || lang == 'zsh') &&
-            trimmed.startsWith('#'))) {
-      return theme.muted.text(line);
-    }
+    try {
+      final cleanLang = lang.trim().toLowerCase();
+      final grammar = _highlighter.registry?.lookup(cleanLang) ??
+          _highlighter.registry?.resolve(cleanLang);
 
-    final keywords = _getKeywordsForLanguage(lang);
-    final keywordSet = Set<String>.from(keywords);
+      if (grammar != null) {
+        final result = _highlighter.highlight(line, language: grammar);
+        final buffer = StringBuffer();
+        for (final token in result.tokens) {
+          buffer.write(_styleToken(token, theme));
+        }
+        return buffer.toString();
+      }
+    } catch (_) {}
 
-    final commentPrefix = (lang == 'py' || lang == 'python' || lang == 'bash' || lang == 'sh' || lang == 'zsh')
-        ? r'#'
-        : (lang == 'sql')
-            ? r'--'
-            : r'//';
-
-    // Single-pass tokenizer:
-    // Group 1: Triple-quoted strings
-    // Group 2: Regular quoted strings
-    // Group 3: Trailing comments
-    // Group 4: Numbers
-    // Group 5: Identifiers / Keywords
-    final tokenPattern = RegExp(
-      r'("""[\s\S]*?"""|' r"'''[\s\S]*?''')"
-      r'|("(?:\\.|[^"\\])*"|' + r"'(?:\\.|[^'\\])*')"
-      r'|(' + commentPrefix + r'.*$)'
-      r'|(\b\d+(?:\.\d+)?\b)'
-      r'|(\b[a-zA-Z_]\w*\b)',
-    );
-
-    return line.splitMapJoin(
-      tokenPattern,
-      onMatch: (m) {
-        final token = m.group(0)!;
-        // Comments
-        if (m.group(3) != null) {
-          return theme.muted.text(token);
-        }
-        // Strings
-        if (m.group(1) != null || m.group(2) != null) {
-          return theme.diffAdd.text(token);
-        }
-        // Numbers
-        if (m.group(4) != null) {
-          return theme.code.text(token);
-        }
-        // Identifiers / Keywords
-        if (m.group(5) != null) {
-          if (keywordSet.contains(token)) {
-            return theme.secondary.text(token);
-          }
-          return token;
-        }
-        return token;
-      },
-      onNonMatch: (nonMatch) => nonMatch,
-    );
+    return line;
   }
 
-  static List<String> _getKeywordsForLanguage(String lang) {
-    switch (lang) {
-      case 'dart':
-        return [
-          'import', 'export', 'library', 'part', 'as', 'show', 'hide',
-          'class', 'enum', 'extension', 'mixin', 'typedef',
-          'final', 'const', 'var', 'late', 'void', 'static', 'dynamic',
-          'int', 'double', 'String', 'bool', 'List', 'Map', 'Set', 'Future', 'Stream',
-          'async', 'await', 'return', 'yield',
-          'if', 'else', 'switch', 'case', 'default', 'for', 'while', 'do', 'in',
-          'break', 'continue', 'try', 'catch', 'finally', 'throw', 'rethrow',
-          'get', 'set', 'this', 'super', 'new', 'is', 'required', 'true', 'false', 'null',
-        ];
+  static String _styleToken(HighlightToken token, NibTheme theme) {
+    final scope = token.scope;
+    if (scope == null) return token.text;
 
-      case 'py':
-      case 'python':
-        return [
-          'def', 'class', 'import', 'from', 'as', 'return', 'yield',
-          'if', 'elif', 'else', 'for', 'while', 'break', 'continue',
-          'try', 'except', 'finally', 'raise', 'with', 'lambda', 'pass',
-          'async', 'await', 'self', 'None', 'True', 'False', 'dict', 'bool', 'str', 'int',
-        ];
-
-      case 'js':
-      case 'javascript':
-      case 'ts':
-      case 'typescript':
-        return [
-          'function', 'const', 'let', 'var', 'return', 'yield',
-          'if', 'else', 'switch', 'case', 'default', 'for', 'while', 'do',
-          'break', 'continue', 'try', 'catch', 'finally', 'throw',
-          'async', 'await', 'class', 'interface', 'type', 'extends', 'implements',
-          'import', 'from', 'export', 'default', 'new', 'this', 'super',
-          'true', 'false', 'null', 'undefined',
-        ];
-
-      case 'bash':
-      case 'sh':
-      case 'shell':
-      case 'zsh':
-        return [
-          'if', 'then', 'else', 'elif', 'fi', 'case', 'esac',
-          'for', 'while', 'do', 'done', 'in', 'until',
-          'echo', 'export', 'set', 'unset', 'exit', 'return', 'local',
-          'function', 'source', 'alias',
-        ];
-
-      case 'sql':
-        return [
-          'SELECT', 'FROM', 'WHERE', 'INSERT', 'INTO', 'UPDATE', 'DELETE',
-          'CREATE', 'TABLE', 'DROP', 'ALTER', 'JOIN', 'LEFT', 'RIGHT', 'INNER',
-          'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'AND', 'OR',
-          'NOT', 'NULL', 'AS', 'ON', 'IN', 'IS', 'DISTINCT', 'COUNT', 'PRIMARY', 'KEY',
-          'select', 'from', 'where', 'insert', 'into', 'update', 'delete',
-          'create', 'table', 'drop', 'alter', 'join', 'left', 'right', 'inner',
-          'group', 'by', 'order', 'having', 'limit', 'offset', 'and', 'or',
-          'not', 'null', 'as', 'on', 'in', 'is', 'distinct', 'count', 'primary', 'key',
-        ];
-
-      case 'json':
-      case 'yaml':
-      case 'yml':
-        return ['true', 'false', 'null', 'TRUE', 'FALSE', 'NULL'];
-
-      default:
-        return [
-          'import', 'class', 'function', 'def', 'return', 'if', 'else',
-          'for', 'while', 'const', 'final', 'var', 'let', 'async', 'await',
-          'true', 'false', 'null',
-        ];
+    if (scope.startsWith('comment')) {
+      return theme.muted.text(token.text);
+    } else if (scope.startsWith('string') || scope.startsWith('interpolation')) {
+      return theme.diffAdd.text(token.text);
+    } else if (scope.startsWith('keyword') || scope.startsWith('operator')) {
+      return theme.secondary.text(token.text);
+    } else if (scope.startsWith('number') || scope.startsWith('literal')) {
+      return theme.code.text(token.text);
+    } else if (scope.startsWith('type') || scope.startsWith('function')) {
+      return theme.accent.text(token.text);
+    } else if (scope.startsWith('variable') || scope.startsWith('property')) {
+      return theme.primary.text(token.text);
+    } else if (scope.startsWith('tag') || scope.startsWith('meta')) {
+      return theme.warning.text(token.text);
     }
+
+    return token.text;
   }
 
   static bool isTableStart(List<String> lines, int i) {
