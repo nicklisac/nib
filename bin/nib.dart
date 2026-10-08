@@ -4,6 +4,7 @@ import 'package:nib/agent/agent.dart';
 import 'package:nib/agent/approval_manager.dart';
 import 'package:nib/agent/config.dart';
 import 'package:nib/agent/session.dart';
+import 'package:nib/agent/skills.dart';
 import 'package:nib/ai/anthropic_provider.dart';
 import 'package:nib/ai/mock_provider.dart';
 import 'package:nib/ai/openai_provider.dart';
@@ -16,6 +17,7 @@ import 'package:nib/tools/search_files_tool.dart';
 import 'package:nib/tools/write_file_tool.dart';
 import 'package:nib/ui/ansi.dart';
 import 'package:nib/ui/cli_ui.dart';
+import 'package:nib/ui/session_picker.dart';
 import 'package:nib/ui/theme.dart';
 
 void main(List<String> arguments) async {
@@ -171,17 +173,23 @@ void main(List<String> arguments) async {
   final shouldResume = results['resume'] as bool;
 
   if (shouldResume) {
-    final recentId = await AgentSession.getMostRecentSessionId();
-    if (recentId != null) {
-      final loaded = await AgentSession.loadFromDisk(recentId);
+    String? targetId;
+    if (results.rest.isEmpty && stdin.hasTerminal) {
+      targetId = await SessionPicker.pickSession();
+    } else {
+      targetId = await AgentSession.getMostRecentSessionId();
+    }
+
+    if (targetId != null) {
+      final loaded = await AgentSession.loadFromDisk(targetId);
       if (loaded != null) {
         session = loaded;
-        stdout.writeln(NibTheme.current.success.text('  ✔ Resumed previous session "$recentId" (${loaded.messages.length} messages)'));
+        stdout.writeln(NibTheme.current.success.text('  ✔ Resumed session "$targetId" (${loaded.messages.length} messages)'));
       } else {
         session = AgentSession();
       }
     } else {
-      stdout.writeln(NibTheme.current.muted.text('  No previous sessions found. Starting fresh session.'));
+      stdout.writeln(NibTheme.current.muted.text('  Starting fresh session.'));
       session = AgentSession();
     }
   } else if (results['session'] != null) {
@@ -198,12 +206,11 @@ void main(List<String> arguments) async {
     session = AgentSession();
   }
 
-  // If user has custom APPEND_SYSTEM instructions (e.g. Tech Lead role from ~/.nib or ~/.tau)
-  if (config.systemPromptAppend != null && config.systemPromptAppend!.isNotEmpty) {
-    session.systemPrompt = '${session.systemPrompt}\n\n${config.systemPromptAppend}';
-  }
-
   final workspace = Directory.current.path;
+
+  // Discover and load modular skills (.nib/skills, ~/.nib/skills, ~/.tau/skills)
+  await SkillsManager.instance.loadSkills(workspacePath: workspace);
+  session.rebuildSystemPrompt(appendPrompt: config.systemPromptAppend);
 
   final tools = [
     BashTool(workingDirectory: workspace),

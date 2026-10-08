@@ -4,10 +4,13 @@ import '../agent/approval_manager.dart';
 import '../agent/compaction.dart';
 import '../agent/config.dart';
 import '../agent/session.dart';
+import '../agent/skills.dart';
 import '../agent/undo_manager.dart';
 import '../ai/mock_provider.dart';
 import '../ai/openai_provider.dart';
 import 'ansi.dart';
+import 'markdown_renderer.dart';
+import 'session_picker.dart';
 import 'theme.dart';
 
 /// Handles slash commands within the interactive CLI loop.
@@ -53,6 +56,11 @@ class SlashCommandHandler {
 
       case '/resume':
         await _handleResume(args);
+        return true;
+
+      case '/skills':
+      case '/skill':
+        await _handleSkills(args);
         return true;
 
       case '/history':
@@ -113,7 +121,8 @@ class SlashCommandHandler {
     stdout.writeln('  ${Ansi.cyanText('/theme [name]')}     Switch TrueColor theme (catppuccin, tokyonight, nord, gruvbox)');
     stdout.writeln('  ${Ansi.cyanText('/confirm')}          Toggle interactive change confirmation mode');
     stdout.writeln('  ${Ansi.cyanText('/sessions')}         List saved sessions');
-    stdout.writeln('  ${Ansi.cyanText('/resume [id]')}      Resume a previous session transcript');
+    stdout.writeln('  ${Ansi.cyanText('/resume [id]')}      Resume a session (interactive picker if no id given)');
+    stdout.writeln('  ${Ansi.cyanText('/skills [cmd]')}     Inspect and toggle modular agent skills (list, show, toggle, reload)');
     stdout.writeln('  ${Ansi.cyanText('/config')}           Display active configuration & endpoints');
     stdout.writeln('  ${Ansi.cyanText('/provider [name]')}  Switch between configured providers');
     stdout.writeln('  ${Ansi.cyanText('/model [name]')}     Display or switch the current model');
@@ -143,7 +152,7 @@ class SlashCommandHandler {
   Future<void> _showSessions() async {
     final list = await AgentSession.listSavedSessions();
     stdout.writeln();
-    stdout.writeln(Ansi.boldText('Saved Sessions (~/.tart/sessions/):'));
+    stdout.writeln(Ansi.boldText('Saved Sessions (~/.nib/sessions/):'));
     if (list.isEmpty) {
       stdout.writeln('  ${Ansi.dimText('No saved sessions found yet.')}');
     } else {
@@ -162,11 +171,8 @@ class SlashCommandHandler {
   Future<void> _handleResume(List<String> args) async {
     String? id;
     if (args.isEmpty) {
-      id = await AgentSession.getMostRecentSessionId();
-      if (id == null) {
-        stdout.writeln(Ansi.yellowText('  No recent session found to resume.'));
-        return;
-      }
+      id = await SessionPicker.pickSession(currentSession: agent.session);
+      if (id == null) return;
     } else {
       id = args[0];
     }
@@ -178,7 +184,124 @@ class SlashCommandHandler {
     }
 
     agent.session = loaded;
-    stdout.writeln(Ansi.greenText('  ✔ Resumed session "$id" (${loaded.messages.length} messages loaded).'));
+    stdout.writeln(NibTheme.current.success.text('  ✔ Resumed session "$id" (${loaded.messages.length} messages loaded).'));
+  }
+
+  Future<void> _handleSkills(List<String> args) async {
+    final theme = NibTheme.current;
+    final sub = args.isNotEmpty ? args[0].toLowerCase() : 'list';
+    final target = args.length > 1 ? args.sublist(1).join(' ').trim() : '';
+
+    switch (sub) {
+      case 'list':
+        final all = SkillsManager.instance.skills;
+        stdout.writeln();
+        stdout.writeln(Ansi.boldText('Registered Agent Skills (${all.where((s) => s.isEnabled).length}/${all.length} active):'));
+        if (all.isEmpty) {
+          stdout.writeln('  ${theme.muted.text('No skills discovered in .nib/skills, ~/.nib/skills, or ~/.tau/skills.')}');
+        } else {
+          for (final s in all) {
+            final statusBadge = s.isEnabled
+                ? theme.success.text('[active]  ')
+                : theme.muted.text('[disabled]');
+            final scopeBadge = s.isWorkspace
+                ? theme.warning.text('[workspace]')
+                : theme.secondary.text('[global]   ');
+            stdout.writeln('  $statusBadge $scopeBadge ${theme.accent.text(s.name.padRight(16))} ${theme.muted.text(s.description)}');
+          }
+        }
+        stdout.writeln('\n  ${theme.muted.text('Commands: /skills toggle <name> | /skills show <name> | /skills reload')}');
+        stdout.writeln();
+        break;
+
+      case 'show':
+      case 'view':
+        if (target.isEmpty) {
+          stdout.writeln(theme.warning.text('  Usage: /skills show <name>'));
+          return;
+        }
+        final skill = SkillsManager.instance.findSkill(target);
+        if (skill == null) {
+          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          return;
+        }
+        stdout.writeln();
+        stdout.writeln('  ${theme.muted.text('╭─')} ${theme.accent.text('Skill: ${skill.name}')} ${theme.muted.text('────────────────────────────────────╮')}');
+        stdout.writeln('  ${theme.muted.text('│')} Location: ${theme.muted.text(skill.filePath)}');
+        stdout.writeln('  ${theme.muted.text('│')} Status:   ${skill.isEnabled ? theme.success.text('Active') : theme.muted.text('Disabled')}');
+        stdout.writeln('  ${theme.muted.text('╰───────────────────────────────────────────────────╯')}');
+        stdout.writeln(MarkdownRenderer.render(skill.content, theme));
+        stdout.writeln();
+        break;
+
+      case 'toggle':
+        if (target.isEmpty) {
+          stdout.writeln(theme.warning.text('  Usage: /skills toggle <name>'));
+          return;
+        }
+        final skill = SkillsManager.instance.findSkill(target);
+        if (skill == null) {
+          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          return;
+        }
+        skill.isEnabled = !skill.isEnabled;
+        agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
+        final stateStr = skill.isEnabled ? theme.success.text('ENABLED') : theme.muted.text('DISABLED');
+        stdout.writeln('  ✔ Skill ${theme.accent.text(skill.name)} is now $stateStr.');
+        break;
+
+      case 'enable':
+        if (target.isEmpty) {
+          stdout.writeln(theme.warning.text('  Usage: /skills enable <name>'));
+          return;
+        }
+        final skill = SkillsManager.instance.findSkill(target);
+        if (skill == null) {
+          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          return;
+        }
+        skill.isEnabled = true;
+        agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
+        stdout.writeln('  ✔ Skill ${theme.accent.text(skill.name)} ${theme.success.text('ENABLED')}.');
+        break;
+
+      case 'disable':
+        if (target.isEmpty) {
+          stdout.writeln(theme.warning.text('  Usage: /skills disable <name>'));
+          return;
+        }
+        final skill = SkillsManager.instance.findSkill(target);
+        if (skill == null) {
+          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          return;
+        }
+        skill.isEnabled = false;
+        agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
+        stdout.writeln('  ✔ Skill ${theme.accent.text(skill.name)} ${theme.muted.text('DISABLED')}.');
+        break;
+
+      case 'reload':
+        stdout.writeln(theme.muted.text('  Reloading skills from workspace and user directories...'));
+        await SkillsManager.instance.loadSkills(workspacePath: Directory.current.path);
+        agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
+        final count = SkillsManager.instance.skills.length;
+        final activeCount = SkillsManager.instance.activeSkills.length;
+        stdout.writeln(theme.success.text('  ✔ Loaded $count skills ($activeCount active). System prompt updated.'));
+        break;
+
+      default:
+        // If user typed `/skills name`, treat it as toggle if name exists
+        final skill = SkillsManager.instance.findSkill(sub);
+        if (skill != null) {
+          skill.isEnabled = !skill.isEnabled;
+          agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
+          final stateStr = skill.isEnabled ? theme.success.text('ENABLED') : theme.muted.text('DISABLED');
+          stdout.writeln('  ✔ Skill ${theme.accent.text(skill.name)} is now $stateStr.');
+        } else {
+          stdout.writeln(theme.warning.text('  Unknown skill command "$sub". Usage: /skills [list|show|toggle|reload] [name]'));
+        }
+        break;
+    }
   }
 
   void _showConfig() {

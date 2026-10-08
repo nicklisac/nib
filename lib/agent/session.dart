@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../ai/chat_message.dart';
+import 'skills.dart';
 
 /// Manages the conversation transcript, system prompt, persistence, and turns.
 class AgentSession {
@@ -46,6 +47,16 @@ class AgentSession {
     if (completionTokens != null) totalCompletionTokens += completionTokens;
   }
 
+  void rebuildSystemPrompt({String? basePrompt, String? appendPrompt}) {
+    final base = basePrompt ?? _defaultSystemPrompt;
+    final skillsPrompt = SkillsManager.instance.formatForSystemPrompt();
+    final append = (appendPrompt != null && appendPrompt.isNotEmpty)
+        ? '\n\n$appendPrompt'
+        : '';
+    systemPrompt = '$base$skillsPrompt$append';
+    addSystemPromptIfNeeded();
+  }
+
   /// Automatically persists session transcript to ~/.nib/sessions/<id>.jsonl
   Future<void> saveToDisk() async {
     try {
@@ -81,7 +92,7 @@ class AgentSession {
     } catch (_) {}
   }
 
-  /// Loads a session from disk by its ID (checking ~/.nib/sessions/ then ~/.tart/sessions/).
+  /// Loads a session from disk by its ID (checking ~/.nib/sessions/, ~/.tart/sessions/, ~/.tau/sessions/).
   static Future<AgentSession?> loadFromDisk(String id) async {
     try {
       final home = Platform.environment['HOME'] ?? '';
@@ -90,7 +101,10 @@ class AgentSession {
       var file = File(p.join(home, '.nib', 'sessions', '$id.jsonl'));
       if (!await file.exists()) {
         file = File(p.join(home, '.tart', 'sessions', '$id.jsonl'));
-        if (!await file.exists()) return null;
+        if (!await file.exists()) {
+          file = File(p.join(home, '.tau', 'sessions', '$id.jsonl'));
+          if (!await file.exists()) return null;
+        }
       }
 
       final lines = await file.readAsLines();
@@ -121,7 +135,7 @@ class AgentSession {
     }
   }
 
-  /// Returns the most recent session ID from ~/.nib/sessions/ (or ~/.tart/sessions/)
+  /// Returns the most recent session ID from ~/.nib/sessions/, ~/.tart/sessions/, or ~/.tau/sessions/
   static Future<String?> getMostRecentSessionId() async {
     try {
       final home = Platform.environment['HOME'] ?? '';
@@ -130,6 +144,7 @@ class AgentSession {
       final dirs = [
         Directory(p.join(home, '.nib', 'sessions')),
         Directory(p.join(home, '.tart', 'sessions')),
+        Directory(p.join(home, '.tau', 'sessions')),
       ];
 
       final files = <File>[];
@@ -159,6 +174,7 @@ class AgentSession {
       final dirs = [
         Directory(p.join(home, '.nib', 'sessions')),
         Directory(p.join(home, '.tart', 'sessions')),
+        Directory(p.join(home, '.tau', 'sessions')),
       ];
 
       final seenIds = <String>{};

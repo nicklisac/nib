@@ -2,10 +2,12 @@ import 'dart:io';
 import 'dart:math';
 import 'package:dart_console/dart_console.dart';
 import 'package:path/path.dart' as p;
+import 'ansi.dart';
 import 'autocomplete.dart';
 import 'theme.dart';
 
-/// Interactive terminal prompt reader supporting persistent history, Up/Down recall, and Tab completion.
+/// Interactive terminal prompt reader supporting persistent history, live command palette,
+/// and Tab completion.
 class PromptReader {
   final Console _console = Console();
   final List<String> _history = [];
@@ -28,45 +30,47 @@ class PromptReader {
         _historyFile = File(p.join(dir.path, 'history'));
         if (_historyFile.existsSync()) {
           final lines = _historyFile.readAsLinesSync();
-          for (final line in lines) {
-            final trimmed = line.trim();
-            if (trimmed.isNotEmpty) {
-              _history.add(trimmed);
-            }
-          }
-          // Cap in-memory history to last 1000 entries
-          if (_history.length > 1000) {
-            _history.removeRange(0, _history.length - 1000);
-          }
+          _history.addAll(lines.where((l) => l.trim().isNotEmpty));
         }
       }
     } catch (_) {}
   }
 
-  /// Appends a new prompt to history and persists to disk.
-  void addToHistory(String prompt) {
-    final trimmed = prompt.trim();
+  /// Adds a command or user prompt to persistent history.
+  void addToHistory(String line) {
+    final trimmed = line.trim();
     if (trimmed.isEmpty) return;
 
-    // Do not duplicate immediate last entry
-    if (_history.isNotEmpty && _history.last == trimmed) return;
+    // Avoid immediate duplicate
+    if (_history.isNotEmpty && _history.last == trimmed) {
+      return;
+    }
 
     _history.add(trimmed);
     try {
-      _historyFile.writeAsStringSync('$trimmed\n', mode: FileMode.append);
+      if (_historyFile.existsSync()) {
+        _historyFile.writeAsStringSync('$trimmed\n', mode: FileMode.append);
+      }
     } catch (_) {}
   }
 
-  int _cursorRow = 0;
-
-  static int visibleWidth(String text) {
-    return text.replaceAll(RegExp(r'\x1B\[[0-9;]*[a-zA-Z]'), '').length;
+  int get _terminalCols {
+    try {
+      if (stdout.hasTerminal) {
+        return max(stdout.terminalColumns, 40);
+      }
+    } catch (_) {}
+    return 80;
   }
 
-  int get _terminalCols =>
-      (stdout.hasTerminal && stdout.terminalColumns > 0) ? stdout.terminalColumns : 80;
+  static int visibleWidth(String str) {
+    return str.replaceAll(RegExp(r'\x1B\[[0-9;]*[a-zA-Z]'), '').length;
+  }
 
-  /// Reads a line with interactive editing, history cycling, and Tab completions.
+  int _cursorRow = 0;
+  int _paletteLines = 0;
+
+  /// Reads a line from terminal stdin with live command palette when typing `/`.
   String? readLine({required String prompt}) {
     if (!stdin.hasTerminal) {
       stdout.write(prompt);
@@ -79,21 +83,37 @@ class PromptReader {
     _historyIndex = -1;
     _savedDraft = '';
     _cursorRow = 0;
+    _paletteLines = 0;
+    var paletteIndex = 0;
 
     while (true) {
       final key = _console.readKey();
 
+      // Check if command palette is active
+      final isSlashCommandMode = buffer.startsWith('/') && !buffer.contains(' ');
+      final paletteMatches = isSlashCommandMode ? AutoCompleter.completeSlashInfo(buffer) : <SlashCommandInfo>[];
+
       if (key.isControl) {
         switch (key.controlChar) {
           case ControlCharacter.enter:
-            final cols = _terminalCols;
-            final promptLen = visibleWidth(prompt);
-            final endRow = (promptLen + buffer.length) ~/ cols;
-            if (endRow > _cursorRow) {
-              stdout.write('\x1B[${endRow - _cursorRow}B');
+            // If palette is open and user pressed enter on a partial match
+            if (paletteMatches.isNotEmpty && buffer.length < paletteMatches[paletteIndex].command.length) {
+              final selectedCmd = paletteMatches[paletteIndex].command;
+              if (selectedCmd == '/theme' || selectedCmd == '/provider' || selectedCmd == '/model' || selectedCmd == '/compact') {
+                buffer = '$selectedCmd ';
+                cursor = buffer.length;
+                paletteIndex = 0;
+                _repaint(prompt, buffer, cursor);
+                continue;
+              } else {
+                buffer = selectedCmd;
+              }
             }
+
+            _clearPalette(prompt, buffer);
             stdout.writeln();
             _cursorRow = 0;
+            _paletteLines = 0;
             final result = buffer.trim();
             if (result.isNotEmpty) {
               addToHistory(result);
@@ -101,6 +121,7 @@ class PromptReader {
             return buffer;
 
           case ControlCharacter.ctrlC:
+            _clearPalette();
             if (buffer.isNotEmpty) {
               if (_cursorRow > 0) {
                 stdout.write('\x1B[${_cursorRow}A');
@@ -109,6 +130,7 @@ class PromptReader {
               buffer = '';
               cursor = 0;
               _cursorRow = 0;
+              _paletteLines = 0;
               continue;
             } else {
               return null;
@@ -121,8 +143,12 @@ class PromptReader {
             break;
 
           case ControlCharacter.arrowUp:
-            // Recall older history entry (Tau-style)
-            if (_history.isNotEmpty) {
+            if (paletteMatches.isNotEmpty) {
+              // Navigate command palette upward
+              paletteIndex = (paletteIndex - 1 + paletteMatches.length) % paletteMatches.length;
+              _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
+            } else if (_history.isNotEmpty) {
+              // Recall older history entry (Tau-style)
               if (_historyIndex == -1) {
                 _savedDraft = buffer;
               }
@@ -136,8 +162,11 @@ class PromptReader {
             break;
 
           case ControlCharacter.arrowDown:
-            // Move toward newer history entry or back to draft
-            if (_historyIndex > 0) {
+            if (paletteMatches.isNotEmpty) {
+              // Navigate command palette downward
+              paletteIndex = (paletteIndex + 1) % paletteMatches.length;
+              _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
+            } else if (_historyIndex > 0) {
               _historyIndex--;
               buffer = _history[_history.length - 1 - _historyIndex];
               cursor = buffer.length;
@@ -153,27 +182,27 @@ class PromptReader {
           case ControlCharacter.arrowLeft:
             if (cursor > 0) {
               cursor--;
-              _repaint(prompt, buffer, cursor);
+              _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
             }
             break;
 
           case ControlCharacter.arrowRight:
             if (cursor < buffer.length) {
               cursor++;
-              _repaint(prompt, buffer, cursor);
+              _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
             }
             break;
 
           case ControlCharacter.home:
           case ControlCharacter.ctrlA:
             cursor = 0;
-            _repaint(prompt, buffer, cursor);
+            _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
             break;
 
           case ControlCharacter.end:
           case ControlCharacter.ctrlE:
             cursor = buffer.length;
-            _repaint(prompt, buffer, cursor);
+            _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
             break;
 
           case ControlCharacter.backspace:
@@ -181,27 +210,43 @@ class PromptReader {
             if (cursor > 0) {
               buffer = buffer.substring(0, cursor - 1) + buffer.substring(cursor);
               cursor--;
-              _repaint(prompt, buffer, cursor);
+              paletteIndex = 0;
+              final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
+                  ? AutoCompleter.completeSlashInfo(buffer)
+                  : <SlashCommandInfo>[];
+              _repaint(prompt, buffer, cursor, paletteMatches: newMatches, paletteIndex: paletteIndex);
             }
             break;
 
           case ControlCharacter.delete:
             if (cursor < buffer.length) {
               buffer = buffer.substring(0, cursor) + buffer.substring(cursor + 1);
-              _repaint(prompt, buffer, cursor);
+              final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
+                  ? AutoCompleter.completeSlashInfo(buffer)
+                  : <SlashCommandInfo>[];
+              _repaint(prompt, buffer, cursor, paletteMatches: newMatches, paletteIndex: paletteIndex);
             }
             break;
 
           case ControlCharacter.tab:
-            // Handle auto-completion
-            final completion = _tryComplete(buffer, cursor);
-            if (completion != null) {
-              buffer = completion.newBuffer;
-              cursor = completion.newCursor;
-              if (completion.previewOptions != null && completion.previewOptions!.isNotEmpty) {
-                _showCompletionPreview(prompt, buffer, cursor, completion.previewOptions!);
-              } else {
-                _repaint(prompt, buffer, cursor);
+            // If command palette is open, Tab selects the highlighted command
+            if (paletteMatches.isNotEmpty) {
+              final selectedCmd = paletteMatches[paletteIndex].command;
+              buffer = '$selectedCmd ';
+              cursor = buffer.length;
+              paletteIndex = 0;
+              _repaint(prompt, buffer, cursor);
+            } else {
+              // File completion
+              final completion = _tryComplete(buffer, cursor);
+              if (completion != null) {
+                buffer = completion.newBuffer;
+                cursor = completion.newCursor;
+                if (completion.previewOptions != null && completion.previewOptions!.isNotEmpty) {
+                  _showCompletionPreview(prompt, buffer, cursor, completion.previewOptions!);
+                } else {
+                  _repaint(prompt, buffer, cursor);
+                }
               }
             }
             break;
@@ -212,16 +257,48 @@ class PromptReader {
       } else {
         // Printable character
         final char = key.char;
+        if (char == '\x1B') {
+          // Escape pressed: dismiss palette
+          _clearPalette();
+          _repaint(prompt, buffer, cursor);
+          continue;
+        }
+
         if (char.isNotEmpty) {
           buffer = buffer.substring(0, cursor) + char + buffer.substring(cursor);
           cursor += char.length;
-          _repaint(prompt, buffer, cursor);
+          paletteIndex = 0;
+
+          final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
+              ? AutoCompleter.completeSlashInfo(buffer)
+              : <SlashCommandInfo>[];
+          _repaint(prompt, buffer, cursor, paletteMatches: newMatches, paletteIndex: paletteIndex);
         }
       }
     }
   }
 
-  void _repaint(String prompt, String buffer, int cursor) {
+  void _clearPalette([String? prompt, String? buffer]) {
+    if (_paletteLines > 0) {
+      if (_cursorRow > 0) {
+        stdout.write('\x1B[${_cursorRow}A');
+      }
+      stdout.write('\r\x1B[J');
+      if (prompt != null && buffer != null) {
+        stdout.write('$prompt$buffer');
+      }
+      _paletteLines = 0;
+      _cursorRow = 0;
+    }
+  }
+
+  void _repaint(
+    String prompt,
+    String buffer,
+    int cursor, {
+    List<SlashCommandInfo>? paletteMatches,
+    int paletteIndex = 0,
+  }) {
     final cols = _terminalCols;
     final promptLen = visibleWidth(prompt);
 
@@ -233,10 +310,10 @@ class PromptReader {
     // 2. Clear from beginning of prompt line down to bottom of screen
     stdout.write('\r\x1B[J');
 
-    // 3. Print prompt and buffer (wraps naturally)
+    // 3. Print prompt and buffer
     stdout.write('$prompt$buffer');
 
-    // 4. Calculate where cursor ended up vs where it should be
+    // 4. Calculate where cursor ended up on prompt
     final totalLen = promptLen + buffer.length;
     final endRow = totalLen ~/ cols;
 
@@ -244,18 +321,60 @@ class PromptReader {
     final targetRow = targetOffset ~/ cols;
     final targetCol = targetOffset % cols;
 
-    // 5. Move cursor vertically up to target row if needed
+    var extraLines = 0;
+
+    // 5. If command palette is active, render palette directly below prompt line
+    if (paletteMatches != null && paletteMatches.isNotEmpty) {
+      final theme = NibTheme.current;
+      const maxShow = 6;
+      final start = (paletteIndex >= maxShow) ? (paletteIndex - maxShow + 1) : 0;
+      final visibleMatches = paletteMatches.skip(start).take(maxShow).toList();
+
+      stdout.writeln();
+      stdout.writeln('  ${theme.muted.text('╭─')} ${theme.accent.text('Commands')} ${theme.muted.text('──────────────────────────────────────────────╮')}');
+      extraLines += 2;
+
+      for (int i = 0; i < visibleMatches.length; i++) {
+        final actualIndex = start + i;
+        final cmd = visibleMatches[i];
+        final isSelected = actualIndex == paletteIndex;
+        final pointer = isSelected ? theme.accent.text('▸') : ' ';
+        final cmdName = cmd.command.padRight(10);
+        final desc = cmd.description;
+        final truncatedDesc = desc.length > 44 ? '${desc.substring(0, 41)}...' : desc;
+
+        if (isSelected) {
+          stdout.writeln('  ${theme.muted.text('│')} $pointer ${Ansi.boldText(theme.accent.text(cmdName))} ${theme.surface.bg}${theme.accent.text(" $truncatedDesc ")}\x1B[0m');
+        } else {
+          stdout.writeln('  ${theme.muted.text('│')} $pointer ${theme.secondary.text(cmdName)} ${theme.muted.text(truncatedDesc)}');
+        }
+        extraLines++;
+      }
+
+      stdout.writeln('  ${theme.muted.text('╰────────────────────────────────────────────────────────────╯')}');
+      stdout.write('  ${theme.muted.text('↑/↓ navigate  Tab/Enter select  Esc dismiss')}');
+      extraLines += 2;
+
+      _paletteLines = extraLines;
+
+      // Move cursor back up to prompt row
+      stdout.write('\x1B[${extraLines}A');
+    } else {
+      _paletteLines = 0;
+    }
+
+    // 6. Move cursor vertically up to target row if needed
     if (endRow > targetRow) {
       stdout.write('\x1B[${endRow - targetRow}A');
     }
 
-    // 6. Move cursor horizontally to target column
+    // 7. Move cursor horizontally to target column
     stdout.write('\r');
     if (targetCol > 0) {
       stdout.write('\x1B[${targetCol}C');
     }
 
-    // 7. Update tracked cursor row
+    // 8. Update tracked cursor row
     _cursorRow = targetRow;
   }
 
@@ -285,7 +404,6 @@ class PromptReader {
         final newBuffer = completed + buffer.substring(cursor);
         return _CompletionResult(newBuffer: newBuffer, newCursor: completed.length);
       } else if (matches.length > 1) {
-        // Find longest common prefix
         final common = _commonPrefix(matches);
         final newBuffer = common + buffer.substring(cursor);
         return _CompletionResult(
