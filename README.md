@@ -92,6 +92,52 @@ export OPENROUTER_API_KEY="sk-or-..."
 
 ---
 
+## ⚙️ Configuration (`~/.nib/config.json`)
+
+```json
+{
+  "default_provider": "exllama",
+  "default_model": "Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6",
+  "providers": {
+    "exllama": {
+      "name": "ExLlamaV3 (tabbyAPI)",
+      "model": "Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6",
+      "base_url": "http://localhost:5000/v1",
+      "api_key": "exl3-key",
+      "context_window": 262144,
+      "max_tokens": 16384
+    }
+  },
+  "max_turns": 0,
+  "max_stuck_iterations": 5,
+  "hard_iteration_cap": 200
+}
+```
+
+The agent's ceilings live in config, not in the binary, because the right value depends on the model you point Nib at. Set them per provider (inside the provider block, where they override the top-level values) or once at the top level.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `context_window` | provider-dependent | Token budget used for auto-compaction. Set this to what your server actually serves; tabbyAPI reports it as `n_ctx_train` on `/v1/models`. |
+| `max_tokens` | provider default | Completion cap sent with each request. |
+| `max_turns` | `0` (unbounded) | Hard per-prompt tool-loop ceiling. Leave it at `0`: a fixed low cap aborts valid work mid-task. |
+| `max_stuck_iterations` | `5` | The real runaway guard. An iteration is its tool calls *and* their results; the loop stops when the identical pair occurs more times than this in one prompt. Raise it if you poll slow workflows that report unchanged status repeatedly. `0` disables it. |
+| `hard_iteration_cap` | `200` | Backstop for a misbehaving provider emitting endless distinct calls. Far above any real task; `0` disables it. |
+
+Repeating a command whose output changed (polling a build, watching a log) counts as progress and never trips the guard.
+
+---
+
+## 🧩 Skills
+
+Nib loads skills from two places only: `<workspace>/.nib/skills/<name>/SKILL.md` and `~/.nib/skills/<name>/SKILL.md`. Skills belonging to other agent harnesses are deliberately not imported.
+
+Only a name and description index is injected into the system prompt (a few hundred tokens rather than every skill body). The model fetches a full body on demand with the `skill` tool, and reads a skill's companion files the same way via `file`, since global skills live outside the workspace where `read_file` cannot reach them.
+
+A skill with `disable-model-invocation: true` in its frontmatter is hidden from the model entirely. Invoke those yourself with `/skills run <name> [instructions]`.
+
+---
+
 ## 🎨 Terminal UX Upgrades
 
 - **Persistent Shell History (`~/.nib/history`)**: Up/Down arrow key recall cycles previous prompts.
@@ -123,6 +169,7 @@ export OPENROUTER_API_KEY="sk-or-..."
 - `/provider [name]` - Switch active provider
 - `/model [name]` - Display or change active model
 - `/tools` - Inspect registered tools and their parameters
+- `/skills [list|show|run|enable|disable|toggle|reload] [name]` - Manage skills. `run` invokes one directly, including skills marked `disable-model-invocation`, which the model cannot load itself
 - `/history` - Display session message count & token usage
 - `/system [prompt]` - Inspect or append to the system prompt
 - `/clear` - Clear conversation history for a fresh turn

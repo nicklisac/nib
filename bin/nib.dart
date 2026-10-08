@@ -14,6 +14,7 @@ import 'package:nib/tools/edit_file_tool.dart';
 import 'package:nib/tools/list_dir_tool.dart';
 import 'package:nib/tools/read_file_tool.dart';
 import 'package:nib/tools/search_files_tool.dart';
+import 'package:nib/tools/skill_tool.dart';
 import 'package:nib/tools/write_file_tool.dart';
 import 'package:nib/ui/ansi.dart';
 import 'package:nib/ui/cli_ui.dart';
@@ -101,6 +102,19 @@ void main(List<String> arguments) async {
   // Load Nib configuration (with automatic fallback to ~/.tart and ~/.tau)
   final explicitConfigPath = results['config'] as String?;
   final config = await NibConfig.load(customPath: explicitConfigPath);
+
+  // Layer this repository's own instructions (AGENTS.md) on top of the global
+  // append prompt, so per-project conventions and the issue-tracker pointer
+  // reach the model without touching the user's global config.
+  final projectInstructions = await NibConfig.loadProjectInstructions(
+    Directory.current.path,
+  );
+  if (projectInstructions != null && projectInstructions.isNotEmpty) {
+    final global = config.systemPromptAppend;
+    config.systemPromptAppend = (global == null || global.isEmpty)
+        ? projectInstructions
+        : '$global\n\n$projectInstructions';
+  }
 
   final isMock = results['mock'] as bool;
   final explicitProvider = results['provider'] as String?;
@@ -221,7 +235,9 @@ void main(List<String> arguments) async {
 
   final workspace = Directory.current.path;
 
-  // Discover and load modular skills (.nib/skills, ~/.nib/skills, ~/.tau/skills)
+  // Discover and load modular skills (.nib/skills and ~/.nib/skills only).
+  // Bodies are not injected: the system prompt carries an index and the model
+  // pulls a skill's full instructions through the `skill` tool.
   await SkillsManager.instance.loadSkills(workspacePath: workspace);
   session.rebuildSystemPrompt(appendPrompt: config.systemPromptAppend);
 
@@ -232,12 +248,20 @@ void main(List<String> arguments) async {
     EditFileTool(workingDirectory: workspace),
     ListDirTool(workingDirectory: workspace),
     SearchFilesTool(workingDirectory: workspace),
+    SkillTool(),
   ];
 
+  // The active provider wins over the top-level values: loop ceilings and the
+  // context window belong to the model, not to the binary.
   final activeProviderConf = config.providers[providerId];
   final activeContextWindow =
       activeProviderConf?.contextWindow ?? config.contextWindow;
   final activeMaxTokens = activeProviderConf?.maxTokens ?? config.maxTokens;
+  final activeMaxTurns = activeProviderConf?.maxTurns ?? config.maxTurns;
+  final activeMaxStuck =
+      activeProviderConf?.maxStuckIterations ?? config.maxStuckIterations;
+  final activeHardCap =
+      activeProviderConf?.hardIterationCap ?? config.hardIterationCap;
 
   final agent = Agent(
     provider: provider,
@@ -245,6 +269,9 @@ void main(List<String> arguments) async {
     tools: tools,
     contextWindow: activeContextWindow,
     maxTokens: activeMaxTokens,
+    maxTurns: activeMaxTurns,
+    maxStuckIterations: activeMaxStuck,
+    hardIterationCap: activeHardCap,
   );
 
   final ui = CliUi(agent, config);

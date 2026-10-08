@@ -19,6 +19,11 @@ class SlashCommandHandler {
   final Agent agent;
   final NibConfig? config;
 
+  /// Set by `/skills run <name>`: the full skill body, prefixed to whatever the
+  /// human asked for. The REPL runs it as the next turn so a human can invoke a
+  /// skill marked `disable-model-invocation`, which the model cannot load itself.
+  String? pendingInvocation;
+
   SlashCommandHandler(this.agent, [this.config]);
 
   /// Returns true if input was a slash command and handled.
@@ -239,6 +244,8 @@ class SlashCommandHandler {
     final sub = args.isNotEmpty ? args[0].toLowerCase() : 'list';
     final target = args.length > 1 ? args.sublist(1).join(' ').trim() : '';
 
+    // Only enable/disable paths write the overrides file.
+    var mutated = false;
     switch (sub) {
       case 'list':
         final all = SkillsManager.instance.skills;
@@ -250,7 +257,7 @@ class SlashCommandHandler {
         );
         if (all.isEmpty) {
           stdout.writeln(
-            '  ${theme.muted.text('No skills discovered in .nib/skills, ~/.nib/skills, or ~/.tau/skills.')}',
+            '  ${theme.muted.text('No skills discovered in .nib/skills or ~/.nib/skills.')}',
           );
         } else {
           for (final s in all) {
@@ -266,7 +273,7 @@ class SlashCommandHandler {
           }
         }
         stdout.writeln(
-          '\n  ${theme.muted.text('Commands: /skills toggle <name> | /skills show <name> | /skills reload')}',
+          '\n  ${theme.muted.text('Commands: /skills show <name> | /skills run <name> [instructions] | /skills enable|disable <name> | /skills reload')}',
         );
         stdout.writeln();
         break;
@@ -309,6 +316,7 @@ class SlashCommandHandler {
           stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
           return;
         }
+        mutated = true;
         skill.isEnabled = !skill.isEnabled;
         agent.session.rebuildSystemPrompt(
           appendPrompt: config?.systemPromptAppend,
@@ -331,6 +339,7 @@ class SlashCommandHandler {
           stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
           return;
         }
+        mutated = true;
         skill.isEnabled = true;
         agent.session.rebuildSystemPrompt(
           appendPrompt: config?.systemPromptAppend,
@@ -350,6 +359,7 @@ class SlashCommandHandler {
           stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
           return;
         }
+        mutated = true;
         skill.isEnabled = false;
         agent.session.rebuildSystemPrompt(
           appendPrompt: config?.systemPromptAppend,
@@ -359,14 +369,58 @@ class SlashCommandHandler {
         );
         break;
 
+      case 'run':
+      case 'use':
+        if (target.isEmpty) {
+          stdout.writeln(
+            theme.warning.text('  Usage: /skills run <name> [instructions]'),
+          );
+          return;
+        }
+        final parts = target.split(RegExp(r'\s+'));
+        var skill = SkillsManager.instance.findSkill(parts.first);
+        var extra = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+        // Skill names may contain spaces, so fall back to matching the whole
+        // argument string when the first word is not a skill.
+        if (skill == null) {
+          skill = SkillsManager.instance.findSkill(target);
+          extra = '';
+        }
+        if (skill == null) {
+          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          return;
+        }
+        if (!skill.isEnabled) {
+          stdout.writeln(
+            theme.warning.text(
+              '  Skill "${skill.name}" is disabled. Enable it first with /skills enable ${skill.name}.',
+            ),
+          );
+          return;
+        }
+        // Human invocation: `disable-model-invocation` is a gate on the *model*
+        // choosing a skill, not on the human handing it over deliberately.
+        final body = SkillsManager.instance.formatSkillBody(skill);
+        pendingInvocation = extra.isEmpty
+            ? body
+            : '$body\n\n## Request\n\n$extra';
+        stdout.writeln(
+          theme.success.text(
+            '  ✔ Invoking skill "${skill.name}"${extra.isEmpty ? '' : ' with your instructions'}.',
+          ),
+        );
+        break;
+
       case 'reload':
         stdout.writeln(
           theme.muted.text(
             '  Reloading skills from workspace and user directories...',
           ),
         );
+        // Reload from the workspace the skills were loaded from, not the
+        // process cwd, so overrides keep applying to the right project.
         await SkillsManager.instance.loadSkills(
-          workspacePath: Directory.current.path,
+          workspacePath: SkillsManager.instance.workspacePath,
         );
         agent.session.rebuildSystemPrompt(
           appendPrompt: config?.systemPromptAppend,
@@ -384,6 +438,7 @@ class SlashCommandHandler {
         // If user typed `/skills name`, treat it as toggle if name exists
         final skill = SkillsManager.instance.findSkill(sub);
         if (skill != null) {
+          mutated = true;
           skill.isEnabled = !skill.isEnabled;
           agent.session.rebuildSystemPrompt(
             appendPrompt: config?.systemPromptAppend,
@@ -397,12 +452,16 @@ class SlashCommandHandler {
         } else {
           stdout.writeln(
             theme.warning.text(
-              '  Unknown skill command "$sub". Usage: /skills [list|show|toggle|reload] [name]',
+              '  Unknown skill command "$sub". Usage: /skills [list|show|run|toggle|enable|disable|reload] [name]',
             ),
           );
         }
         break;
     }
+
+    // Persist enable/disable changes only: `list` and `show` must not touch
+    // .nib/skills.json, and early `return`s above skip this entirely.
+    if (mutated) await SkillsManager.instance.saveOverrides();
   }
 
   void _showConfig() {

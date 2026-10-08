@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import '../ai/chat_message.dart';
 import '../ai/event_stream.dart';
 import '../ai/provider.dart';
@@ -31,7 +32,36 @@ class Agent {
   LLMProvider provider;
   AgentSession session;
   final Map<String, AgentTool> _tools = {};
+
+  /// Ceiling on tool-loop iterations within one user prompt. `0` means unbounded,
+  /// which is the default: real agentic work (planning skills, multi-file
+  /// refactors) needs far more iterations than any fixed number can predict, and
+  /// a low ceiling aborts valid work mid-task. The historical 20-iteration cap
+  /// caused exactly that and must not come back.
+  ///
+  /// Real runaway protection is [maxStuckIterations], which detects repetition.
+  /// [hardIterationCap] is a far higher net for a broken provider, not a limit on
+  /// legitimate work.
   final int maxTurns;
+
+  /// How many times the *same* iteration may occur within one prompt before the
+  /// loop is treated as stuck. An iteration is identified by its tool calls and
+  /// their results, so a call whose output changes (polling a build, watching a
+  /// log) is progress and never counts. Counting occurrences rather than
+  /// consecutive runs also catches alternating cycles (A, B, A, B), which a
+  /// consecutive counter resets on every step and therefore never catches.
+  ///
+  /// The default leaves room for legitimate waiting, where a command such as
+  /// `sleep 30 && gh run view` reports the same unchanged status several times in
+  /// a row. Raise it for slow-workflow polling; `0` disables the guard.
+  final int maxStuckIterations;
+
+  /// Absolute iteration ceiling, set far above any plausible real task, that
+  /// guarantees termination if a provider emits endless distinct-but-useless
+  /// calls. With compaction enabled an unbounded loop would otherwise burn
+  /// context and API budget forever. `0` disables it.
+  final int hardIterationCap;
+
   final int? contextWindow;
   final int? maxTokens;
 
@@ -39,7 +69,9 @@ class Agent {
     required this.provider,
     required this.session,
     List<AgentTool> tools = const [],
-    this.maxTurns = 20,
+    this.maxTurns = 0,
+    this.maxStuckIterations = 5,
+    this.hardIterationCap = 200,
     this.contextWindow,
     this.maxTokens,
   }) {
@@ -84,8 +116,12 @@ class Agent {
         : (effectiveContext ~/ 4);
 
     int currentTurn = 0;
+    // Occurrence counts per iteration signature (calls + results), so repeated
+    // work is caught even when it alternates with other calls.
+    final iterationCounts = <String, int>{};
 
-    while (currentTurn < maxTurns && !_isCancelled) {
+    while (!_isCancelled &&
+        !_iterationLimitReached(currentTurn, callbacks: callbacks)) {
       currentTurn++;
 
       // Auto-compact before calling model if context threshold is reached
@@ -190,6 +226,15 @@ class Agent {
         break;
       }
 
+      // Signature of the calls issued this iteration; combined with the results
+      // below it decides whether the loop actually made progress. Arguments are
+      // canonicalised so that the same call with reordered JSON keys counts as
+      // the same iteration.
+      final callSignature = toolCalls
+          .map((c) => '${c.name}:${_canonical(c.arguments)}')
+          .join('|');
+      final resultParts = <String>[];
+
       // Execute requested tools
       for (int i = 0; i < toolCalls.length; i++) {
         final call = toolCalls[i];
@@ -260,6 +305,7 @@ class Agent {
 
         // Add tool result to transcript (safely truncated if oversized)
         final sanitizedResult = _truncateToolResult(result);
+        resultParts.add(sanitizedResult);
         session.addMessage(
           ChatMessage.toolResult(
             toolCallId: call.id,
@@ -278,6 +324,30 @@ class Agent {
         break;
       }
 
+      // Runaway guard. An iteration is identified by its tool calls *and* their
+      // results, so re-running a command whose output changed (polling a build,
+      // watching a log) is real progress and never counts against the limit.
+      // Occurrences are counted across the whole prompt rather than consecutively,
+      // which also catches alternating A/B/A/B cycles that a consecutive counter
+      // resets on every step and therefore never sees.
+      final iterationSignature = '$callSignature\n${resultParts.join("\n")}';
+      final occurrences = (iterationCounts[iterationSignature] ?? 0) + 1;
+      iterationCounts[iterationSignature] = occurrences;
+      if (maxStuckIterations > 0 && occurrences > maxStuckIterations) {
+        callbacks?.onThoughtDelta?.call(
+          '\n[Stopped: the same tool call and result occurred $occurrences '
+          'times in this prompt with no progress. Awaiting steering input.]\n',
+        );
+        session.addMessage(
+          ChatMessage.assistant(
+            '[This tool call has now returned the same result $occurrences times '
+            'without changing anything, so the loop was stopped to avoid '
+            'spinning. Try a different approach, or steer me in a new direction.]',
+          ),
+        );
+        break;
+      }
+
       // Check if finish reason indicates stop despite tool calls (rare)
       if (lastFinishReason == 'stop' && toolCalls.isEmpty) {
         break;
@@ -289,6 +359,34 @@ class Agent {
   }
 
   static const int maxToolOutputChars = 20000;
+
+  /// Whether an iteration ceiling has been reached. By default [maxTurns] is `0`
+  /// (no per-prompt ceiling) and only [hardIterationCap] applies, which exists to
+  /// stop a broken provider, not to limit legitimate work.
+  bool _iterationLimitReached(int currentTurn, {AgentCallbacks? callbacks}) {
+    if (maxTurns > 0 && currentTurn >= maxTurns) return true;
+    if (hardIterationCap > 0 && currentTurn >= hardIterationCap) {
+      callbacks?.onThoughtDelta?.call(
+        '\n[Stopped: reached the absolute limit of $hardIterationCap tool '
+        'iterations for one prompt. The task likely needs to be split up.]\n',
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /// Stable string for a JSON-ish value, with map keys sorted so that two calls
+  /// carrying the same arguments in a different order hash identically.
+  static String _canonical(Object? value) {
+    if (value is Map) {
+      final keys = value.keys.map((k) => k.toString()).toList()..sort();
+      return '{${keys.map((k) => '"$k":${_canonical(value[k])}').join(',')}}';
+    }
+    if (value is List) {
+      return '[${value.map(_canonical).join(',')}]';
+    }
+    return jsonEncode(value);
+  }
 
   static String _truncateToolResult(String output) {
     if (output.length <= maxToolOutputChars) return output;

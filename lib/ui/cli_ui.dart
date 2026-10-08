@@ -64,6 +64,13 @@ class CliUi {
 
       // Check slash commands (/help, /clear, /undo, /theme, etc.)
       if (await _slashHandler.handle(trimmed)) {
+        // A skill the human invoked runs as a normal turn, with the skill body
+        // already loaded into the prompt.
+        final invocation = _slashHandler.pendingInvocation;
+        if (invocation != null) {
+          _slashHandler.pendingInvocation = null;
+          await _executeAgentTurn(invocation);
+        }
         continue;
       }
 

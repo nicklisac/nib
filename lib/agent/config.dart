@@ -10,6 +10,13 @@ class ProviderConfig {
   final int? contextWindow;
   final int? maxTokens;
 
+  /// Per-provider overrides for the agent tool-loop ceilings. The active
+  /// provider's value wins over the top-level one, since the right ceiling
+  /// depends on which model is answering.
+  final int? maxTurns;
+  final int? maxStuckIterations;
+  final int? hardIterationCap;
+
   ProviderConfig({
     required this.name,
     required this.model,
@@ -17,6 +24,9 @@ class ProviderConfig {
     required this.apiKey,
     this.contextWindow,
     this.maxTokens,
+    this.maxTurns,
+    this.maxStuckIterations,
+    this.hardIterationCap,
   });
 
   factory ProviderConfig.fromJson(String id, Map<String, dynamic> json) {
@@ -28,6 +38,9 @@ class ProviderConfig {
       apiKey: json['api_key'] as String? ?? '',
       contextWindow: (json['context_window'] as num?)?.toInt(),
       maxTokens: (json['max_tokens'] as num?)?.toInt(),
+      maxTurns: (json['max_turns'] as num?)?.toInt(),
+      maxStuckIterations: (json['max_stuck_iterations'] as num?)?.toInt(),
+      hardIterationCap: (json['hard_iteration_cap'] as num?)?.toInt(),
     );
   }
 
@@ -38,6 +51,9 @@ class ProviderConfig {
     'api_key': apiKey,
     if (contextWindow != null) 'context_window': contextWindow,
     if (maxTokens != null) 'max_tokens': maxTokens,
+    if (maxTurns != null) 'max_turns': maxTurns,
+    if (maxStuckIterations != null) 'max_stuck_iterations': maxStuckIterations,
+    if (hardIterationCap != null) 'hard_iteration_cap': hardIterationCap,
   };
 }
 
@@ -50,6 +66,18 @@ class NibConfig {
   int? contextWindow;
   int? maxTokens;
 
+  /// Agent tool-loop ceilings, read from config so they track the model in use
+  /// rather than a value baked into the binary. `0` disables a ceiling.
+  ///
+  /// [maxTurns] is a per-prompt ceiling and defaults to `0` (unbounded): a fixed
+  /// low cap aborts valid work, which is why the historical 20-iteration limit
+  /// was removed. [maxStuckIterations] is the real guard, stopping the loop once
+  /// the same tool call returning the same result repeats too often.
+  /// [hardIterationCap] is a backstop for a misbehaving provider.
+  final int maxTurns;
+  final int maxStuckIterations;
+  final int hardIterationCap;
+
   NibConfig({
     this.defaultProvider = 'exllama',
     this.defaultModel,
@@ -57,7 +85,39 @@ class NibConfig {
     this.systemPromptAppend,
     this.contextWindow,
     this.maxTokens,
+    this.maxTurns = 0,
+    this.maxStuckIterations = 5,
+    this.hardIterationCap = 200,
   }) : providers = providers ?? {};
+
+  /// Loads this repository's own instructions from AGENTS.md (or CLAUDE.md).
+  ///
+  /// Returned text is appended after the global APPEND_SYSTEM.md so per-project
+  /// conventions, doc pointers, and the issue-tracker location reach the model.
+  /// Capped to protect the context window from an oversized file.
+  static Future<String?> loadProjectInstructions(
+    String workspacePath, {
+    int maxChars = 12000,
+  }) async {
+    for (final fileName in const ['AGENTS.md', 'CLAUDE.md']) {
+      final file = File(p.join(workspacePath, fileName));
+      if (!await file.exists()) continue;
+      try {
+        var text = (await file.readAsString()).trim();
+        if (text.isEmpty) continue;
+        if (text.length > maxChars) {
+          final omitted = text.length - maxChars;
+          text =
+              '${text.substring(0, maxChars)}\n\n[$fileName truncated: $omitted '
+              'characters omitted. Read the file directly for the rest.]';
+        }
+        return '## Project instructions (from $fileName)\n\n$text';
+      } catch (_) {
+        // An unreadable instructions file must never block startup.
+      }
+    }
+    return null;
+  }
 
   /// Loads configuration from ~/.nib/config.json or falls back to ~/.tart or ~/.tau.
   static Future<NibConfig> load({String? customPath}) async {
@@ -103,6 +163,13 @@ class NibConfig {
             defaultModel: json['default_model'] as String?,
             providers: providersMap,
             systemPromptAppend: appendPrompt,
+            contextWindow: (json['context_window'] as num?)?.toInt(),
+            maxTokens: (json['max_tokens'] as num?)?.toInt(),
+            maxTurns: (json['max_turns'] as num?)?.toInt() ?? 0,
+            maxStuckIterations:
+                (json['max_stuck_iterations'] as num?)?.toInt() ?? 5,
+            hardIterationCap:
+                (json['hard_iteration_cap'] as num?)?.toInt() ?? 200,
           );
         } catch (_) {
           // Try next candidate
@@ -221,6 +288,11 @@ class NibConfig {
     final map = {
       'default_provider': defaultProvider,
       if (defaultModel != null) 'default_model': defaultModel,
+      if (contextWindow != null) 'context_window': contextWindow,
+      if (maxTokens != null) 'max_tokens': maxTokens,
+      if (maxTurns != 0) 'max_turns': maxTurns,
+      if (maxStuckIterations != 5) 'max_stuck_iterations': maxStuckIterations,
+      if (hardIterationCap != 200) 'hard_iteration_cap': hardIterationCap,
       'providers': providers.map((k, v) => MapEntry(k, v.toJson())),
     };
 

@@ -1,4 +1,31 @@
 #!/usr/bin/env bash
 # Nib - Dart Terminal Coding Agent CLI Runner
+#
+# Runs Nib from a precompiled kernel snapshot instead of `dart run`. `dart run`
+# recompiles the whole program from source on every launch (~3.6s here); a
+# snapshot cuts that to ~0.06s. The snapshot is rebuilt automatically whenever
+# any source file or the dependency set is newer than it.
+set -euo pipefail
+
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-exec dart run "$SCRIPT_DIR/bin/nib.dart" "$@"
+SNAPSHOT="$SCRIPT_DIR/.dart_tool/nib.snapshot"
+ENTRY="$SCRIPT_DIR/bin/nib.dart"
+
+needs_rebuild() {
+  [[ -f "$SNAPSHOT" ]] || return 0
+  # Rebuild if any Dart source, the pubspec, or the lockfile is newer.
+  while IFS= read -r -d '' f; do
+    [[ "$f" -nt "$SNAPSHOT" ]] && return 0
+  done < <(find "$SCRIPT_DIR/bin" "$SCRIPT_DIR/lib" -name '*.dart' -print0)
+  [[ "$SCRIPT_DIR/pubspec.yaml" -nt "$SNAPSHOT" ]] && return 0
+  [[ "$SCRIPT_DIR/pubspec.lock" -nt "$SNAPSHOT" ]] && return 0
+  return 1
+}
+
+if needs_rebuild; then
+  mkdir -p "$SCRIPT_DIR/.dart_tool"
+  echo "Compiling Nib..." >&2
+  dart --snapshot="$SNAPSHOT" --snapshot-kind=kernel "$ENTRY" >/dev/null
+fi
+
+exec dart "$SNAPSHOT" "$@"
