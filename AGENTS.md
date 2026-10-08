@@ -66,6 +66,9 @@ To add a tool: subclass `AgentTool` in `lib/tools/`, implement `name`, `descript
 - Skills are discovered only from `.nib/skills/` (workspace) and `~/.nib/skills/`
   (global). Skill directories belonging to other agent harnesses are deliberately not
   scanned.
+- Feel is a requirement, not polish. The non-negotiables a feature must not violate live in
+  [`docs/feel.md`](docs/feel.md); read it before building UI or input behaviour, and cite the rule
+  number when a change touches one.
 - CI (`.github/workflows/ci.yml`) runs `dart format --set-exit-if-changed`,
   `dart analyze --fatal-infos`, and `dart test`. All three must pass.
 - When the user mentions something that bugs them in passing — a UI or QoL irritation,
