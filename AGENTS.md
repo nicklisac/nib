@@ -81,3 +81,14 @@ is the interface. See `docs/agents/issue-tracker.md`.
 Single-context layout: `CONTEXT.md` at the repo root plus `docs/adr/`. Both are created
 lazily by the domain-modeling skill when terms actually get resolved. See
 `docs/agents/domain.md`.
+
+### Wayfinder maps
+
+One active map: [nicklisac/nib#1 — Wayfinder map: Nib daily-driver parity](https://github.com/nicklisac/nib/issues/1),
+labelled `wayfinder:map`. Its destination: Nib becomes the daily driver in place of Tau, with
+nothing unnecessary. Planning phase only so far — tickets resolve decisions, they do not build.
+
+The map is an index, not a store: it gists each decision and links to the ticket that holds it.
+Read the map body before picking a ticket, and never restate a ticket's detail back into the map.
+Open tickets are its child issues, found by query; `docs/agents/issue-tracker.md` covers the
+tracker conventions (sub-issues, native blocking, claim-by-assignee).
