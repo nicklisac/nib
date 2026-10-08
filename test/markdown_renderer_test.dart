@@ -236,8 +236,11 @@ def gate(pr: dict) -> bool:
       // 5. Escaped asterisks must render as literal asterisks (not italicized)
       expect(rendered, contains('*not italic*'));
 
-      // 6. Strikethrough code must be present
+      // 6. Strikethrough code must be present and raw tildes stripped
       expect(rendered, contains('\x1B[9m'));
+      expect(rendered, isNot(contains('~~struck~~')));
+      expect(rendered, isNot(contains('~~great~~')));
+      expect(rendered, isNot(contains('~~dramatic~~')));
     });
   });
 }
