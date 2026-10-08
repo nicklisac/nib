@@ -8,6 +8,11 @@ build/
 *.env
 .env*
 
+# Per-project local state written by Nib (skill enable/disable overrides).
+# .nib/skills/ is deliberately NOT ignored: it is a skill discovery path and is
+# meant to be committed.
+.nib/skills.json
+
 # IDE & OS
 .DS_Store
 .idea/
@@ -15,3 +20,6 @@ build/
 *.swp
 *~
 tool/
+
+# Throwaway prototypes (e.g. the #22 ambient-line prototype on branch
+# prototype/ambient-line). Keep them out of main; capture on a branch instead.
