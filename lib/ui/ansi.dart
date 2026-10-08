@@ -39,14 +39,28 @@ class Ansi {
   static String grayText(String text) => style(text, gray);
 
   /// Minimal Pi & Tau inspired banner for Nib
-  static String banner({required String model, required String provider, required String workspace}) {
+  static String banner({
+    required String model,
+    required String provider,
+    required String workspace,
+  }) {
     final buf = StringBuffer();
     buf.writeln();
-    buf.writeln('${boldText(brightCyanText('  ✒   NIB'))} ${dimText('· Dart Terminal Coding Agent (in the style of Pi & Tau)')}');
-    buf.writeln('  ${dimText('model:')} ${boldText(cyanText(model))} ${dimText('· provider:')} ${yellowText(provider)}');
+    buf.writeln(
+      '${boldText(brightCyanText('  ✒   NIB'))} ${dimText('· Dart Terminal Coding Agent (in the style of Pi & Tau)')}',
+    );
+    buf.writeln(
+      '  ${dimText('model:')} ${boldText(cyanText(model))} ${dimText('· provider:')} ${yellowText(provider)}',
+    );
     buf.writeln('  ${dimText('workspace:')} ${grayText(workspace)}');
-    buf.writeln('  ${dimText('type')} ${boldText('/help')} ${dimText('for slash commands, or ask anything to start.')}');
-    buf.writeln(dimText('  ─────────────────────────────────────────────────────────────────'));
+    buf.writeln(
+      '  ${dimText('type')} ${boldText('/help')} ${dimText('for slash commands, or ask anything to start.')}',
+    );
+    buf.writeln(
+      dimText(
+        '  ─────────────────────────────────────────────────────────────────',
+      ),
+    );
     return buf.toString();
   }
 }

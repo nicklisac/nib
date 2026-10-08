@@ -12,16 +12,21 @@ void main() {
 
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('nib_undo_test_');
+      AgentSession.storageDirectoryOverride = tempDir.path;
     });
 
     tearDown(() async {
+      AgentSession.storageDirectoryOverride = null;
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }
     });
 
     test('DiffFormatter formats additions and deletions with color codes', () {
-      final diff = DiffFormatter.formatDiff('line 1\nline 2', 'line 1\nline two');
+      final diff = DiffFormatter.formatDiff(
+        'line 1\nline 2',
+        'line 1\nline two',
+      );
       expect(diff, anyElement(contains('line 2')));
       expect(diff, anyElement(contains('line two')));
     });
@@ -30,7 +35,10 @@ void main() {
       final writeTool = WriteFileTool(workingDirectory: tempDir.path);
       final editTool = EditFileTool(workingDirectory: tempDir.path);
 
-      await writeTool.execute({'path': 'sample.txt', 'content': 'Initial text\nKeep this'});
+      await writeTool.execute({
+        'path': 'sample.txt',
+        'content': 'Initial text\nKeep this',
+      });
 
       final editRes = await editTool.execute({
         'path': 'sample.txt',
@@ -55,7 +63,9 @@ void main() {
     });
 
     test('Session saves and restores from disk', () async {
-      final session = AgentSession(id: 'test_session_${DateTime.now().millisecondsSinceEpoch}');
+      final session = AgentSession(
+        id: 'test_session_${DateTime.now().millisecondsSinceEpoch}',
+      );
       session.addSystemPromptIfNeeded();
       session.recordUsage(150, 42);
 

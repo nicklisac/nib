@@ -13,11 +13,9 @@ class AgentSession {
   int totalCompletionTokens = 0;
   int toolExecutionsCount = 0;
 
-  AgentSession({
-    String? id,
-    String? systemPrompt,
-  })  : id = id ?? 'session_${DateTime.now().millisecondsSinceEpoch}',
-        systemPrompt = systemPrompt ?? _defaultSystemPrompt;
+  AgentSession({String? id, String? systemPrompt})
+    : id = id ?? 'session_${DateTime.now().millisecondsSinceEpoch}',
+      systemPrompt = systemPrompt ?? _defaultSystemPrompt;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
 
@@ -57,13 +55,22 @@ class AgentSession {
     addSystemPromptIfNeeded();
   }
 
-  /// Automatically persists session transcript to ~/.nib/sessions/<id>.jsonl
+  /// Optional override for the session storage directory (primarily for testing).
+  static String? storageDirectoryOverride;
+
+  /// Automatically persists session transcript to `~/.nib/sessions/<id>.jsonl`
   Future<void> saveToDisk() async {
     try {
-      final home = Platform.environment['HOME'] ?? '';
-      if (home.isEmpty) return;
+      final String sessionDirPath;
+      if (storageDirectoryOverride != null) {
+        sessionDirPath = storageDirectoryOverride!;
+      } else {
+        final home = Platform.environment['HOME'] ?? '';
+        if (home.isEmpty) return;
+        sessionDirPath = p.join(home, '.nib', 'sessions');
+      }
 
-      final sessionDir = Directory(p.join(home, '.nib', 'sessions'));
+      final sessionDir = Directory(sessionDirPath);
       if (!await sessionDir.exists()) {
         await sessionDir.create(recursive: true);
       }
@@ -72,15 +79,17 @@ class AgentSession {
       final sink = file.openWrite();
 
       // Write metadata header
-      sink.writeln(jsonEncode({
-        '_type': 'meta',
-        'id': id,
-        'system_prompt': systemPrompt,
-        'prompt_tokens': totalPromptTokens,
-        'completion_tokens': totalCompletionTokens,
-        'tool_executions': toolExecutionsCount,
-        'timestamp': DateTime.now().toIso8601String(),
-      }));
+      sink.writeln(
+        jsonEncode({
+          '_type': 'meta',
+          'id': id,
+          'system_prompt': systemPrompt,
+          'prompt_tokens': totalPromptTokens,
+          'completion_tokens': totalCompletionTokens,
+          'tool_executions': toolExecutionsCount,
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+      );
 
       // Write messages
       for (final msg in _messages) {
@@ -95,16 +104,29 @@ class AgentSession {
   /// Loads a session from disk by its ID (checking ~/.nib/sessions/, ~/.tart/sessions/, ~/.tau/sessions/).
   static Future<AgentSession?> loadFromDisk(String id) async {
     try {
-      final home = Platform.environment['HOME'] ?? '';
-      if (home.isEmpty) return null;
-
-      var file = File(p.join(home, '.nib', 'sessions', '$id.jsonl'));
-      if (!await file.exists()) {
-        file = File(p.join(home, '.tart', 'sessions', '$id.jsonl'));
-        if (!await file.exists()) {
-          file = File(p.join(home, '.tau', 'sessions', '$id.jsonl'));
-          if (!await file.exists()) return null;
+      File? file;
+      if (storageDirectoryOverride != null) {
+        final overrideFile = File(
+          p.join(storageDirectoryOverride!, '$id.jsonl'),
+        );
+        if (await overrideFile.exists()) {
+          file = overrideFile;
         }
+      }
+
+      if (file == null) {
+        final home = Platform.environment['HOME'] ?? '';
+        if (home.isEmpty) return null;
+
+        var candidate = File(p.join(home, '.nib', 'sessions', '$id.jsonl'));
+        if (!await candidate.exists()) {
+          candidate = File(p.join(home, '.tart', 'sessions', '$id.jsonl'));
+          if (!await candidate.exists()) {
+            candidate = File(p.join(home, '.tau', 'sessions', '$id.jsonl'));
+            if (!await candidate.exists()) return null;
+          }
+        }
+        file = candidate;
       }
 
       final lines = await file.readAsLines();
@@ -122,7 +144,8 @@ class AgentSession {
             systemPrompt: json['system_prompt'] as String?,
           );
           session.totalPromptTokens = json['prompt_tokens'] as int? ?? 0;
-          session.totalCompletionTokens = json['completion_tokens'] as int? ?? 0;
+          session.totalCompletionTokens =
+              json['completion_tokens'] as int? ?? 0;
           session.toolExecutionsCount = json['tool_executions'] as int? ?? 0;
         } else if (session != null) {
           session.addMessage(ChatMessage.fromJson(json));
@@ -138,25 +161,33 @@ class AgentSession {
   /// Returns the most recent session ID from ~/.nib/sessions/, ~/.tart/sessions/, or ~/.tau/sessions/
   static Future<String?> getMostRecentSessionId() async {
     try {
-      final home = Platform.environment['HOME'] ?? '';
-      if (home.isEmpty) return null;
-
-      final dirs = [
-        Directory(p.join(home, '.nib', 'sessions')),
-        Directory(p.join(home, '.tart', 'sessions')),
-        Directory(p.join(home, '.tau', 'sessions')),
-      ];
+      final dirs = <Directory>[];
+      if (storageDirectoryOverride != null) {
+        dirs.add(Directory(storageDirectoryOverride!));
+      } else {
+        final home = Platform.environment['HOME'] ?? '';
+        if (home.isEmpty) return null;
+        dirs.addAll([
+          Directory(p.join(home, '.nib', 'sessions')),
+          Directory(p.join(home, '.tart', 'sessions')),
+          Directory(p.join(home, '.tau', 'sessions')),
+        ]);
+      }
 
       final files = <File>[];
       for (final sessionDir in dirs) {
         if (await sessionDir.exists()) {
           final entities = await sessionDir.list().toList();
-          files.addAll(entities.whereType<File>().where((f) => f.path.endsWith('.jsonl')));
+          files.addAll(
+            entities.whereType<File>().where((f) => f.path.endsWith('.jsonl')),
+          );
         }
       }
       if (files.isEmpty) return null;
 
-      files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+      files.sort(
+        (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
+      );
       final mostRecent = files.first;
       return p.basenameWithoutExtension(mostRecent.path);
     } catch (_) {
@@ -168,21 +199,28 @@ class AgentSession {
   static Future<List<Map<String, dynamic>>> listSavedSessions() async {
     final list = <Map<String, dynamic>>[];
     try {
-      final home = Platform.environment['HOME'] ?? '';
-      if (home.isEmpty) return list;
-
-      final dirs = [
-        Directory(p.join(home, '.nib', 'sessions')),
-        Directory(p.join(home, '.tart', 'sessions')),
-        Directory(p.join(home, '.tau', 'sessions')),
-      ];
+      final dirs = <Directory>[];
+      if (storageDirectoryOverride != null) {
+        dirs.add(Directory(storageDirectoryOverride!));
+      } else {
+        final home = Platform.environment['HOME'] ?? '';
+        if (home.isEmpty) return list;
+        dirs.addAll([
+          Directory(p.join(home, '.nib', 'sessions')),
+          Directory(p.join(home, '.tart', 'sessions')),
+          Directory(p.join(home, '.tau', 'sessions')),
+        ]);
+      }
 
       final seenIds = <String>{};
       final files = <File>[];
 
       for (final dir in dirs) {
         if (await dir.exists()) {
-          final entities = await dir.list().where((e) => e is File && e.path.endsWith('.jsonl')).toList();
+          final entities = await dir
+              .list()
+              .where((e) => e is File && e.path.endsWith('.jsonl'))
+              .toList();
           for (final e in entities) {
             final f = e as File;
             final id = p.basenameWithoutExtension(f.path);
@@ -193,7 +231,9 @@ class AgentSession {
         }
       }
 
-      files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      files.sort(
+        (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
+      );
 
       for (final f in files.take(10)) {
         final id = p.basenameWithoutExtension(f.path);
@@ -204,7 +244,10 @@ class AgentSession {
           try {
             final parsed = jsonDecode(line) as Map<String, dynamic>;
             if (parsed['role'] == 'user') {
-              summary = (parsed['content'] as String? ?? '').replaceAll('\n', ' ');
+              summary = (parsed['content'] as String? ?? '').replaceAll(
+                '\n',
+                ' ',
+              );
               messageCount++;
             }
           } catch (_) {}
@@ -213,7 +256,9 @@ class AgentSession {
           'id': id,
           'modified': f.statSync().modified,
           'user_turns': messageCount,
-          'last_prompt': summary.length > 50 ? '${summary.substring(0, 47)}...' : summary,
+          'last_prompt': summary.length > 50
+              ? '${summary.substring(0, 47)}...'
+              : summary,
         });
       }
     } catch (_) {}

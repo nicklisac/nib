@@ -9,7 +9,7 @@ class WriteFileTool extends AgentTool {
   final String workingDirectory;
 
   WriteFileTool({String? workingDirectory})
-      : workingDirectory = workingDirectory ?? Directory.current.path;
+    : workingDirectory = workingDirectory ?? Directory.current.path;
 
   @override
   String get name => 'write_file';
@@ -20,19 +20,19 @@ class WriteFileTool extends AgentTool {
 
   @override
   Map<String, dynamic> get parameters => {
-        'type': 'object',
-        'properties': {
-          'path': {
-            'type': 'string',
-            'description': 'The path of the file to write (relative or absolute).',
-          },
-          'content': {
-            'type': 'string',
-            'description': 'The complete text content to write to the file.',
-          },
-        },
-        'required': ['path', 'content'],
-      };
+    'type': 'object',
+    'properties': {
+      'path': {
+        'type': 'string',
+        'description': 'The path of the file to write (relative or absolute).',
+      },
+      'content': {
+        'type': 'string',
+        'description': 'The complete text content to write to the file.',
+      },
+    },
+    'required': ['path', 'content'],
+  };
 
   @override
   Future<String> execute(Map<String, dynamic> arguments) async {
@@ -46,14 +46,19 @@ class WriteFileTool extends AgentTool {
       return 'Error: Content argument is required';
     }
 
-    final fullPath = p.normalize(p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath));
-    if (!p.isWithin(workingDirectory, fullPath) && fullPath != workingDirectory) {
+    final fullPath = p.normalize(
+      p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath),
+    );
+    if (!p.isWithin(workingDirectory, fullPath) &&
+        fullPath != workingDirectory) {
       return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
     }
     final file = File(fullPath);
 
     try {
-      final beforeContent = await file.exists() ? await file.readAsString() : '';
+      final beforeContent = await file.exists()
+          ? await file.readAsString()
+          : '';
       final approved = await ApprovalManager.instance.confirmFileEdit(
         path: rawPath,
         oldContent: beforeContent,

@@ -10,7 +10,6 @@ import 'theme.dart';
 /// Interactive terminal prompt reader supporting persistent history, live command palette,
 /// and Tab completion.
 class PromptReader {
-  final Console _console = Console();
   final List<String> _history = [];
   int _historyIndex = -1;
   String _savedDraft = '';
@@ -92,16 +91,23 @@ class PromptReader {
       final key = await TerminalManager.instance.nextKey();
 
       // Check if command palette is active
-      final isSlashCommandMode = buffer.startsWith('/') && !buffer.contains(' ');
-      final paletteMatches = isSlashCommandMode ? AutoCompleter.completeSlashInfo(buffer) : <SlashCommandInfo>[];
+      final isSlashCommandMode =
+          buffer.startsWith('/') && !buffer.contains(' ');
+      final paletteMatches = isSlashCommandMode
+          ? AutoCompleter.completeSlashInfo(buffer)
+          : <SlashCommandInfo>[];
 
       if (key.isControl) {
         switch (key.controlChar) {
           case ControlCharacter.enter:
             // If palette is open and user pressed enter on a partial match
-            if (paletteMatches.isNotEmpty && buffer.length < paletteMatches[paletteIndex].command.length) {
+            if (paletteMatches.isNotEmpty &&
+                buffer.length < paletteMatches[paletteIndex].command.length) {
               final selectedCmd = paletteMatches[paletteIndex].command;
-              if (selectedCmd == '/theme' || selectedCmd == '/provider' || selectedCmd == '/model' || selectedCmd == '/compact') {
+              if (selectedCmd == '/theme' ||
+                  selectedCmd == '/provider' ||
+                  selectedCmd == '/model' ||
+                  selectedCmd == '/compact') {
                 buffer = '$selectedCmd ';
                 cursor = buffer.length;
                 paletteIndex = 0;
@@ -138,13 +144,16 @@ class PromptReader {
             } else {
               final now = DateTime.now();
               if (_lastCtrlCTime != null &&
-                  now.difference(_lastCtrlCTime!) < const Duration(seconds: 2)) {
+                  now.difference(_lastCtrlCTime!) <
+                      const Duration(seconds: 2)) {
                 stdout.writeln('^C');
                 return null;
               } else {
                 _lastCtrlCTime = now;
                 stdout.writeln('^C');
-                stdout.writeln('  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}');
+                stdout.writeln(
+                  '  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}',
+                );
                 stdout.write(prompt);
                 continue;
               }
@@ -159,8 +168,16 @@ class PromptReader {
           case ControlCharacter.arrowUp:
             if (paletteMatches.isNotEmpty) {
               // Navigate command palette upward
-              paletteIndex = (paletteIndex - 1 + paletteMatches.length) % paletteMatches.length;
-              _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
+              paletteIndex =
+                  (paletteIndex - 1 + paletteMatches.length) %
+                  paletteMatches.length;
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: paletteMatches,
+                paletteIndex: paletteIndex,
+              );
             } else if (_history.isNotEmpty) {
               // Recall older history entry (Tau-style)
               if (_historyIndex == -1) {
@@ -179,7 +196,13 @@ class PromptReader {
             if (paletteMatches.isNotEmpty) {
               // Navigate command palette downward
               paletteIndex = (paletteIndex + 1) % paletteMatches.length;
-              _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: paletteMatches,
+                paletteIndex: paletteIndex,
+              );
             } else if (_historyIndex > 0) {
               _historyIndex--;
               buffer = _history[_history.length - 1 - _historyIndex];
@@ -196,49 +219,87 @@ class PromptReader {
           case ControlCharacter.arrowLeft:
             if (cursor > 0) {
               cursor--;
-              _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: paletteMatches,
+                paletteIndex: paletteIndex,
+              );
             }
             break;
 
           case ControlCharacter.arrowRight:
             if (cursor < buffer.length) {
               cursor++;
-              _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: paletteMatches,
+                paletteIndex: paletteIndex,
+              );
             }
             break;
 
           case ControlCharacter.home:
           case ControlCharacter.ctrlA:
             cursor = 0;
-            _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
+            _repaint(
+              prompt,
+              buffer,
+              cursor,
+              paletteMatches: paletteMatches,
+              paletteIndex: paletteIndex,
+            );
             break;
 
           case ControlCharacter.end:
           case ControlCharacter.ctrlE:
             cursor = buffer.length;
-            _repaint(prompt, buffer, cursor, paletteMatches: paletteMatches, paletteIndex: paletteIndex);
+            _repaint(
+              prompt,
+              buffer,
+              cursor,
+              paletteMatches: paletteMatches,
+              paletteIndex: paletteIndex,
+            );
             break;
 
           case ControlCharacter.backspace:
           case ControlCharacter.ctrlH:
             if (cursor > 0) {
-              buffer = buffer.substring(0, cursor - 1) + buffer.substring(cursor);
+              buffer =
+                  buffer.substring(0, cursor - 1) + buffer.substring(cursor);
               cursor--;
               paletteIndex = 0;
               final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
                   ? AutoCompleter.completeSlashInfo(buffer)
                   : <SlashCommandInfo>[];
-              _repaint(prompt, buffer, cursor, paletteMatches: newMatches, paletteIndex: paletteIndex);
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: newMatches,
+                paletteIndex: paletteIndex,
+              );
             }
             break;
 
           case ControlCharacter.delete:
             if (cursor < buffer.length) {
-              buffer = buffer.substring(0, cursor) + buffer.substring(cursor + 1);
+              buffer =
+                  buffer.substring(0, cursor) + buffer.substring(cursor + 1);
               final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
                   ? AutoCompleter.completeSlashInfo(buffer)
                   : <SlashCommandInfo>[];
-              _repaint(prompt, buffer, cursor, paletteMatches: newMatches, paletteIndex: paletteIndex);
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: newMatches,
+                paletteIndex: paletteIndex,
+              );
             }
             break;
 
@@ -256,8 +317,14 @@ class PromptReader {
               if (completion != null) {
                 buffer = completion.newBuffer;
                 cursor = completion.newCursor;
-                if (completion.previewOptions != null && completion.previewOptions!.isNotEmpty) {
-                  _showCompletionPreview(prompt, buffer, cursor, completion.previewOptions!);
+                if (completion.previewOptions != null &&
+                    completion.previewOptions!.isNotEmpty) {
+                  _showCompletionPreview(
+                    prompt,
+                    buffer,
+                    cursor,
+                    completion.previewOptions!,
+                  );
                 } else {
                   _repaint(prompt, buffer, cursor);
                 }
@@ -279,14 +346,21 @@ class PromptReader {
         }
 
         if (char.isNotEmpty) {
-          buffer = buffer.substring(0, cursor) + char + buffer.substring(cursor);
+          buffer =
+              buffer.substring(0, cursor) + char + buffer.substring(cursor);
           cursor += char.length;
           paletteIndex = 0;
 
           final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
               ? AutoCompleter.completeSlashInfo(buffer)
               : <SlashCommandInfo>[];
-          _repaint(prompt, buffer, cursor, paletteMatches: newMatches, paletteIndex: paletteIndex);
+          _repaint(
+            prompt,
+            buffer,
+            cursor,
+            paletteMatches: newMatches,
+            paletteIndex: paletteIndex,
+          );
         }
       }
     }
@@ -341,11 +415,15 @@ class PromptReader {
     if (paletteMatches != null && paletteMatches.isNotEmpty) {
       final theme = NibTheme.current;
       const maxShow = 6;
-      final start = (paletteIndex >= maxShow) ? (paletteIndex - maxShow + 1) : 0;
+      final start = (paletteIndex >= maxShow)
+          ? (paletteIndex - maxShow + 1)
+          : 0;
       final visibleMatches = paletteMatches.skip(start).take(maxShow).toList();
 
       stdout.writeln();
-      stdout.writeln('  ${theme.muted.text('╭─')} ${theme.accent.text('Commands')} ${theme.muted.text('──────────────────────────────────────────────╮')}');
+      stdout.writeln(
+        '  ${theme.muted.text('╭─')} ${theme.accent.text('Commands')} ${theme.muted.text('──────────────────────────────────────────────╮')}',
+      );
       extraLines += 2;
 
       for (int i = 0; i < visibleMatches.length; i++) {
@@ -355,18 +433,28 @@ class PromptReader {
         final pointer = isSelected ? theme.accent.text('▸') : ' ';
         final cmdName = cmd.command.padRight(10);
         final desc = cmd.description;
-        final truncatedDesc = desc.length > 44 ? '${desc.substring(0, 41)}...' : desc;
+        final truncatedDesc = desc.length > 44
+            ? '${desc.substring(0, 41)}...'
+            : desc;
 
         if (isSelected) {
-          stdout.writeln('  ${theme.muted.text('│')} $pointer ${Ansi.boldText(theme.accent.text(cmdName))} ${theme.surface.bg}${theme.accent.text(" $truncatedDesc ")}\x1B[0m');
+          stdout.writeln(
+            '  ${theme.muted.text('│')} $pointer ${Ansi.boldText(theme.accent.text(cmdName))} ${theme.surface.bg}${theme.accent.text(" $truncatedDesc ")}\x1B[0m',
+          );
         } else {
-          stdout.writeln('  ${theme.muted.text('│')} $pointer ${theme.secondary.text(cmdName)} ${theme.muted.text(truncatedDesc)}');
+          stdout.writeln(
+            '  ${theme.muted.text('│')} $pointer ${theme.secondary.text(cmdName)} ${theme.muted.text(truncatedDesc)}',
+          );
         }
         extraLines++;
       }
 
-      stdout.writeln('  ${theme.muted.text('╰────────────────────────────────────────────────────────────╯')}');
-      stdout.write('  ${theme.muted.text('↑/↓ navigate  Tab/Enter select  Esc dismiss')}');
+      stdout.writeln(
+        '  ${theme.muted.text('╰────────────────────────────────────────────────────────────╯')}',
+      );
+      stdout.write(
+        '  ${theme.muted.text('↑/↓ navigate  Tab/Enter select  Esc dismiss')}',
+      );
       extraLines += 2;
 
       _paletteLines = extraLines;
@@ -392,7 +480,12 @@ class PromptReader {
     _cursorRow = targetRow;
   }
 
-  void _showCompletionPreview(String prompt, String buffer, int cursor, List<String> options) {
+  void _showCompletionPreview(
+    String prompt,
+    String buffer,
+    int cursor,
+    List<String> options,
+  ) {
     final cols = _terminalCols;
     final promptLen = visibleWidth(prompt);
     final endRow = (promptLen + buffer.length) ~/ cols;
@@ -401,7 +494,9 @@ class PromptReader {
     }
     stdout.writeln();
     final theme = NibTheme.current;
-    stdout.writeln('  ${theme.muted.text('Suggestions:')} ${options.map((o) => theme.accent.text(o)).join(theme.muted.text('  '))}');
+    stdout.writeln(
+      '  ${theme.muted.text('Suggestions:')} ${options.map((o) => theme.accent.text(o)).join(theme.muted.text('  '))}',
+    );
     stdout.write(prompt + buffer);
     _cursorRow = endRow;
     _repaint(prompt, buffer, cursor);
@@ -416,7 +511,10 @@ class PromptReader {
       if (matches.length == 1) {
         final completed = '${matches.first} ';
         final newBuffer = completed + buffer.substring(cursor);
-        return _CompletionResult(newBuffer: newBuffer, newCursor: completed.length);
+        return _CompletionResult(
+          newBuffer: newBuffer,
+          newCursor: completed.length,
+        );
       } else if (matches.length > 1) {
         final common = _commonPrefix(matches);
         final newBuffer = common + buffer.substring(cursor);
@@ -436,12 +534,16 @@ class PromptReader {
       final matches = AutoCompleter.completeFile(query);
       if (matches.length == 1) {
         final replacement = '${matches.first} ';
-        final newBuffer = buffer.substring(0, lastAt) + replacement + buffer.substring(cursor);
+        final newBuffer =
+            buffer.substring(0, lastAt) +
+            replacement +
+            buffer.substring(cursor);
         final newCursor = lastAt + replacement.length;
         return _CompletionResult(newBuffer: newBuffer, newCursor: newCursor);
       } else if (matches.length > 1) {
         final common = _commonPrefix(matches);
-        final newBuffer = buffer.substring(0, lastAt) + common + buffer.substring(cursor);
+        final newBuffer =
+            buffer.substring(0, lastAt) + common + buffer.substring(cursor);
         final newCursor = lastAt + common.length;
         return _CompletionResult(
           newBuffer: newBuffer,

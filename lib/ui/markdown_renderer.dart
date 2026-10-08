@@ -21,7 +21,11 @@ class MarkdownRenderer {
   }
 
   /// Highlights inline elements like `code`, **bold**, *italic*, ~~strikethrough~~, and [links](url).
-  static String formatInline(String text, NibTheme theme, {bool inTable = false}) {
+  static String formatInline(
+    String text,
+    NibTheme theme, {
+    bool inTable = false,
+  }) {
     // 1. Preserve escaped markdown characters like \* \# \` \[ \]
     final escapes = <String, String>{};
     int escapeCounter = 0;
@@ -44,29 +48,40 @@ class MarkdownRenderer {
     });
 
     // 4. Bold + Italic ***...*** or ___...___
-    result = result.replaceAllMapped(RegExp(r'\*\*\*([^*]+)\*\*\*|___([^_]+)___'), (match) {
-      final bi = (match.group(1) ?? match.group(2))!;
-      return Ansi.boldText('\x1B[3m$bi\x1B[23m');
-    });
+    result = result.replaceAllMapped(
+      RegExp(r'\*\*\*([^*]+)\*\*\*|___([^_]+)___'),
+      (match) {
+        final bi = (match.group(1) ?? match.group(2))!;
+        return Ansi.boldText('\x1B[3m$bi\x1B[23m');
+      },
+    );
 
     // 5. Bold **...** or __...__
-    result = result.replaceAllMapped(RegExp(r'\*\*([^*]+)\*\*|__([^_]+)__'), (match) {
+    result = result.replaceAllMapped(RegExp(r'\*\*([^*]+)\*\*|__([^_]+)__'), (
+      match,
+    ) {
       final bold = (match.group(1) ?? match.group(2))!;
       return Ansi.boldText(bold);
     });
 
     // 6. Italic *...* or _..._
-    result = result.replaceAllMapped(RegExp(r'(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)'), (match) {
-      final it = (match.group(1) ?? match.group(2))!;
-      return '\x1B[3m$it\x1B[23m';
-    });
+    result = result.replaceAllMapped(
+      RegExp(r'(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)'),
+      (match) {
+        final it = (match.group(1) ?? match.group(2))!;
+        return '\x1B[3m$it\x1B[23m';
+      },
+    );
 
     // 7. Links [text](url) (supports optional "hover title")
-    result = result.replaceAllMapped(RegExp(r'\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)'), (match) {
-      final linkText = match.group(1)!;
-      final url = match.group(2)!;
-      return '${theme.accent.text(linkText)} ${theme.muted.text('($url)')}';
-    });
+    result = result.replaceAllMapped(
+      RegExp(r'\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)'),
+      (match) {
+        final linkText = match.group(1)!;
+        final url = match.group(2)!;
+        return '${theme.accent.text(linkText)} ${theme.muted.text('($url)')}';
+      },
+    );
 
     // 8. Restore escaped characters
     escapes.forEach((key, val) {
@@ -76,7 +91,9 @@ class MarkdownRenderer {
     return result;
   }
 
-  static final Highlighter _highlighter = Highlighter(registry: allLanguagesRegistry());
+  static final Highlighter _highlighter = Highlighter(
+    registry: allLanguagesRegistry(),
+  );
 
   /// Multi-language syntax tinting using val_highlight across 55+ languages.
   static String highlightCodeLine(String line, String lang, NibTheme theme) {
@@ -84,7 +101,8 @@ class MarkdownRenderer {
 
     try {
       final cleanLang = lang.trim().toLowerCase();
-      final grammar = _highlighter.registry?.lookup(cleanLang) ??
+      final grammar =
+          _highlighter.registry?.lookup(cleanLang) ??
           _highlighter.registry?.resolve(cleanLang);
 
       if (grammar != null) {
@@ -106,7 +124,8 @@ class MarkdownRenderer {
 
     if (scope.startsWith('comment')) {
       return theme.muted.text(token.text);
-    } else if (scope.startsWith('string') || scope.startsWith('interpolation')) {
+    } else if (scope.startsWith('string') ||
+        scope.startsWith('interpolation')) {
       return theme.diffAdd.text(token.text);
     } else if (scope.startsWith('keyword') || scope.startsWith('operator')) {
       return theme.secondary.text(token.text);
@@ -142,7 +161,9 @@ class MarkdownRenderer {
   static List<String> splitRow(String row) {
     var trimmed = row.trim();
     if (trimmed.startsWith('|')) trimmed = trimmed.substring(1);
-    if (trimmed.endsWith('|')) trimmed = trimmed.substring(0, trimmed.length - 1);
+    if (trimmed.endsWith('|')) {
+      trimmed = trimmed.substring(0, trimmed.length - 1);
+    }
     return trimmed.split('|').map((c) => c.trim()).toList();
   }
 
@@ -181,11 +202,12 @@ class MarkdownRenderer {
       ..headerStyle = FontStyle.bold;
 
     for (int col = 0; col < columnCount; col++) {
-      final headerText = formatInline(rawHeaders[col], activeTheme, inTable: true);
-      table.insertColumn(
-        header: headerText,
-        alignment: alignments[col],
+      final headerText = formatInline(
+        rawHeaders[col],
+        activeTheme,
+        inTable: true,
       );
+      table.insertColumn(header: headerText, alignment: alignments[col]);
     }
 
     final rows = <List<String>>[];
@@ -239,8 +261,8 @@ class StreamingMarkdownPrinter {
   final List<String> _pendingTableLines = [];
 
   StreamingMarkdownPrinter({NibTheme? theme, void Function(String text)? out})
-      : theme = theme ?? NibTheme.current,
-        _out = out ?? stdout.write;
+    : theme = theme ?? NibTheme.current,
+      _out = out ?? stdout.write;
 
   /// Adds an incoming token or text delta from the model stream.
   void addDelta(String delta) {
@@ -279,7 +301,8 @@ class StreamingMarkdownPrinter {
       } else {
         // We have header + delimiter (+ optionally some rows).
         // Is this line another row of the table?
-        final isRow = trimmed.isNotEmpty &&
+        final isRow =
+            trimmed.isNotEmpty &&
             trimmed.contains('|') &&
             !trimmed.startsWith('```') &&
             !MarkdownRenderer.isDelimiterRow(line);
@@ -315,12 +338,18 @@ class StreamingMarkdownPrinter {
       if (!_inCodeBlock) {
         _inCodeBlock = true;
         _codeBlockLang = trimmed.substring(3).trim().toLowerCase();
-        final langTag = _codeBlockLang.isNotEmpty ? ' $_codeBlockLang ' : ' code ';
-        _out('  ${theme.muted.text('╭─')}${theme.accent.text(langTag)}${theme.muted.text('─────────────────────────────────────────╮')}\n');
+        final langTag = _codeBlockLang.isNotEmpty
+            ? ' $_codeBlockLang '
+            : ' code ';
+        _out(
+          '  ${theme.muted.text('╭─')}${theme.accent.text(langTag)}${theme.muted.text('─────────────────────────────────────────╮')}\n',
+        );
       } else {
         _inCodeBlock = false;
         _codeBlockLang = '';
-        _out('  ${theme.muted.text('╰──────────────────────────────────────────────────╯')}\n');
+        _out(
+          '  ${theme.muted.text('╰──────────────────────────────────────────────────╯')}\n',
+        );
       }
       return;
     }
@@ -329,25 +358,36 @@ class StreamingMarkdownPrinter {
       if (line.isEmpty) {
         _out('  ${theme.muted.text('│')}\n');
       } else {
-        _out('  ${theme.muted.text('│')} ${MarkdownRenderer.highlightCodeLine(line, _codeBlockLang, theme)}\n');
+        _out(
+          '  ${theme.muted.text('│')} ${MarkdownRenderer.highlightCodeLine(line, _codeBlockLang, theme)}\n',
+        );
       }
       return;
     }
 
     // Horizontal rule
-    if (trimmed == '---' || trimmed == '***' || trimmed == '___' || RegExp(r'^-{3,}$').hasMatch(trimmed)) {
-      _out('\n  ${theme.muted.text('──────────────────────────────────────────────────')}\n');
+    if (trimmed == '---' ||
+        trimmed == '***' ||
+        trimmed == '___' ||
+        RegExp(r'^-{3,}$').hasMatch(trimmed)) {
+      _out(
+        '\n  ${theme.muted.text('──────────────────────────────────────────────────')}\n',
+      );
       return;
     }
 
     // Headers
     if (trimmed.startsWith('# ')) {
       final title = trimmed.substring(2);
-      _out('\n  ${Ansi.boldText(theme.accent.text(title))}\n  ${theme.muted.text('━' * (title.length + 2))}\n');
+      _out(
+        '\n  ${Ansi.boldText(theme.accent.text(title))}\n  ${theme.muted.text('━' * (title.length + 2))}\n',
+      );
       return;
     } else if (trimmed.startsWith('## ')) {
       final title = trimmed.substring(3);
-      _out('\n  ${Ansi.boldText(theme.secondary.text(title))}\n  ${theme.muted.text('─' * (title.length + 2))}\n');
+      _out(
+        '\n  ${Ansi.boldText(theme.secondary.text(title))}\n  ${theme.muted.text('─' * (title.length + 2))}\n',
+      );
       return;
     } else if (trimmed.startsWith('### ')) {
       final title = trimmed.substring(4);
@@ -357,7 +397,10 @@ class StreamingMarkdownPrinter {
 
     // Blockquotes
     if (trimmed.startsWith('> ')) {
-      final quoteContent = MarkdownRenderer.formatInline(trimmed.substring(2), theme);
+      final quoteContent = MarkdownRenderer.formatInline(
+        trimmed.substring(2),
+        theme,
+      );
       _out('  ${theme.muted.text('│')} $quoteContent\n');
       return;
     }
@@ -368,11 +411,18 @@ class StreamingMarkdownPrinter {
     final trimmedLeft = line.trimLeft();
 
     // Task lists: - [x] or - [ ] or * [x] or * [ ]
-    final taskMatch = RegExp(r'^[-*]\s+\[([ xX])\]\s+(.+)$').firstMatch(trimmedLeft);
+    final taskMatch = RegExp(
+      r'^[-*]\s+\[([ xX])\]\s+(.+)$',
+    ).firstMatch(trimmedLeft);
     if (taskMatch != null) {
       final isDone = taskMatch.group(1)!.toLowerCase() == 'x';
-      final taskContent = MarkdownRenderer.formatInline(taskMatch.group(2)!, theme);
-      final checkIcon = isDone ? theme.success.text('✔') : theme.muted.text('☐');
+      final taskContent = MarkdownRenderer.formatInline(
+        taskMatch.group(2)!,
+        theme,
+      );
+      final checkIcon = isDone
+          ? theme.success.text('✔')
+          : theme.muted.text('☐');
       _out('$indent$checkIcon $taskContent\n');
       return;
     }
@@ -380,7 +430,9 @@ class StreamingMarkdownPrinter {
     // Bullet lists: - item or * item
     if (trimmedLeft.startsWith('- ') || trimmedLeft.startsWith('* ')) {
       final content = trimmedLeft.substring(2);
-      _out('$indent${theme.accent.text('•')} ${MarkdownRenderer.formatInline(content, theme)}\n');
+      _out(
+        '$indent${theme.accent.text('•')} ${MarkdownRenderer.formatInline(content, theme)}\n',
+      );
       return;
     }
 
@@ -389,7 +441,9 @@ class StreamingMarkdownPrinter {
     if (numMatch != null) {
       final numPart = numMatch.group(1)!;
       final rest = numMatch.group(2)!;
-      _out('$indent${theme.accent.text(numPart)} ${MarkdownRenderer.formatInline(rest, theme)}\n');
+      _out(
+        '$indent${theme.accent.text(numPart)} ${MarkdownRenderer.formatInline(rest, theme)}\n',
+      );
       return;
     }
 
@@ -435,14 +489,18 @@ class StreamingMarkdownPrinter {
       final text = _charBuffer;
       _charBuffer = '';
       if (_inCodeBlock) {
-        _out('  ${theme.muted.text('│')} ${MarkdownRenderer.highlightCodeLine(text, _codeBlockLang, theme)}\n');
+        _out(
+          '  ${theme.muted.text('│')} ${MarkdownRenderer.highlightCodeLine(text, _codeBlockLang, theme)}\n',
+        );
       } else {
         _out(MarkdownRenderer.formatInline(text, theme));
       }
     }
 
     if (_inCodeBlock) {
-      _out('  ${theme.muted.text('╰──────────────────────────────────────────────────╯')}\n');
+      _out(
+        '  ${theme.muted.text('╰──────────────────────────────────────────────────╯')}\n',
+      );
       _inCodeBlock = false;
       _codeBlockLang = '';
     }

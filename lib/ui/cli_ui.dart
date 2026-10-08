@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:dart_console/dart_console.dart';
 import '../agent/agent.dart';
 import '../agent/config.dart';
-import '../ai/chat_message.dart';
 import 'ansi.dart';
 import 'autocomplete.dart';
 import 'markdown_renderer.dart';
@@ -28,7 +27,7 @@ class CliUi {
   StreamSubscription<ProcessSignal>? _sigintSub;
 
   CliUi(this.agent, [this.config])
-      : _slashHandler = SlashCommandHandler(agent, config);
+    : _slashHandler = SlashCommandHandler(agent, config);
 
   /// Starts the interactive REPL terminal loop.
   Future<void> run() async {
@@ -49,7 +48,8 @@ class CliUi {
       // Render modern dock status bar above prompt
       stdout.writeln(StatusBar.render(agent));
 
-      final promptString = '${theme.accent.text('nib')} ${theme.secondary.text('❯')} ';
+      final promptString =
+          '${theme.accent.text('nib')} ${theme.secondary.text('❯')} ';
       final input = await _readMultiLineInput(promptString);
 
       if (input == null) {
@@ -84,17 +84,24 @@ class CliUi {
         if (_isExecutingTurn) {
           _spinner.stop();
           agent.cancel();
-          stdout.writeln('\n  ${NibTheme.current.warning.text('⚠ Turn cancelled by user.')}');
+          stdout.writeln(
+            '\n  ${NibTheme.current.warning.text('⚠ Turn cancelled by user.')}',
+          );
         } else {
           final now = DateTime.now();
-          if (_lastSigintTime != null && now.difference(_lastSigintTime!) < const Duration(seconds: 2)) {
-            stdout.writeln('\n${NibTheme.current.muted.text('Exiting...')}' );
+          if (_lastSigintTime != null &&
+              now.difference(_lastSigintTime!) < const Duration(seconds: 2)) {
+            stdout.writeln('\n${NibTheme.current.muted.text('Exiting...')}');
             TerminalManager.instance.shutdown(0);
           } else {
             _lastSigintTime = now;
-            stdout.writeln('\n  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}' );
+            stdout.writeln(
+              '\n  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}',
+            );
             final theme = NibTheme.current;
-            stdout.write('${theme.accent.text('nib')} ${theme.secondary.text('❯')} ');
+            stdout.write(
+              '${theme.accent.text('nib')} ${theme.secondary.text('❯')} ',
+            );
           }
         }
       });
@@ -120,7 +127,9 @@ class CliUi {
       buffer.writeln(remainder);
 
       while (true) {
-        final line = await _promptReader.readLine(prompt: '${theme.muted.text('...')} ${theme.secondary.text('❯')} ');
+        final line = await _promptReader.readLine(
+          prompt: '${theme.muted.text('...')} ${theme.secondary.text('❯')} ',
+        );
         if (line == null) break;
         if (line.trim().endsWith('"""')) {
           buffer.writeln(line.trim().substring(0, line.trim().length - 3));
@@ -134,13 +143,19 @@ class CliUi {
     // Check trailing backslash continuation: \
     if (firstLine.trim().endsWith('\\')) {
       final buffer = StringBuffer();
-      buffer.writeln(firstLine.trim().substring(0, firstLine.trim().length - 1).trim());
+      buffer.writeln(
+        firstLine.trim().substring(0, firstLine.trim().length - 1).trim(),
+      );
 
       while (true) {
-        final nextLine = await _promptReader.readLine(prompt: '${theme.muted.text('...')} ${theme.secondary.text('❯')} ');
+        final nextLine = await _promptReader.readLine(
+          prompt: '${theme.muted.text('...')} ${theme.secondary.text('❯')} ',
+        );
         if (nextLine == null) break;
         if (nextLine.trim().endsWith('\\')) {
-          buffer.writeln(nextLine.trim().substring(0, nextLine.trim().length - 1).trim());
+          buffer.writeln(
+            nextLine.trim().substring(0, nextLine.trim().length - 1).trim(),
+          );
         } else {
           buffer.writeln(nextLine);
           break;
@@ -198,7 +213,9 @@ class CliUi {
         markdownPrinter.flush();
         final argsSummary = _formatToolArgsSummary(call.name, call.arguments);
         stdout.writeln();
-        stdout.writeln('  ${theme.muted.text('╭─')} ${theme.warning.text('⚙')} ${theme.accent.text(call.name)} ${theme.secondary.text(argsSummary)} ${theme.muted.text('──────────────────────────────')}' );
+        stdout.writeln(
+          '  ${theme.muted.text('╭─')} ${theme.warning.text('⚙')} ${theme.accent.text(call.name)} ${theme.secondary.text(argsSummary)} ${theme.muted.text('──────────────────────────────')}',
+        );
         _spinner.start('Running ${call.name}...');
       },
       onToolCallFinished: (call, result, duration) {
@@ -210,14 +227,20 @@ class CliUi {
             stdout.writeln('  ${theme.muted.text('│')}  $line');
           }
         }
-        stdout.writeln('  ${theme.muted.text('╰─')} ${theme.success.text('✔')} ${theme.muted.text('done (${ms}ms)')} ${theme.muted.text('──────────────────────────────────────')}' );
+        stdout.writeln(
+          '  ${theme.muted.text('╰─')} ${theme.success.text('✔')} ${theme.muted.text('done (${ms}ms)')} ${theme.muted.text('──────────────────────────────────────')}',
+        );
         stdout.writeln();
       },
       onToolProgress: (call, line) {
-        final clean = line.replaceAll(RegExp(r'\x1B\[[0-9;]*[a-zA-Z]'), '').trim();
+        final clean = line
+            .replaceAll(RegExp(r'\x1B\[[0-9;]*[a-zA-Z]'), '')
+            .trim();
         if (clean.isNotEmpty) {
           const maxLen = 45;
-          final short = clean.length > maxLen ? '${clean.substring(0, maxLen)}...' : clean;
+          final short = clean.length > maxLen
+              ? '${clean.substring(0, maxLen)}...'
+              : clean;
           _spinner.updateMessage('${call.name}: $short');
         }
       },
@@ -240,12 +263,16 @@ class CliUi {
       keySub = TerminalManager.instance.keyStream.listen((key) {
         if (key.isControl &&
             (key.controlChar == ControlCharacter.escape ||
-             key.controlChar == ControlCharacter.ctrlC)) {
+                key.controlChar == ControlCharacter.ctrlC)) {
           _spinner.stop();
           agent.cancel();
           TerminalManager.instance.clearBuffer();
-          final keyName = key.controlChar == ControlCharacter.escape ? 'Esc' : 'Ctrl+C';
-          stdout.writeln('\n  ${theme.warning.text('⚠ Turn cancelled by user ($keyName).')}');
+          final keyName = key.controlChar == ControlCharacter.escape
+              ? 'Esc'
+              : 'Ctrl+C';
+          stdout.writeln(
+            '\n  ${theme.warning.text('⚠ Turn cancelled by user ($keyName).')}',
+          );
         }
       });
     }
@@ -273,7 +300,9 @@ class CliUi {
       final cmd = args['command'] as String;
       return '"$cmd"';
     }
-    if ((toolName == 'read_file' || toolName == 'write_file' || toolName == 'edit_file') &&
+    if ((toolName == 'read_file' ||
+            toolName == 'write_file' ||
+            toolName == 'edit_file') &&
         args.containsKey('path')) {
       final path = args['path'] as String;
       if (args.containsKey('start_line') || args.containsKey('end_line')) {
@@ -306,7 +335,11 @@ class CliUi {
         res.add(line);
       }
       if (lines.length > maxDiffLines) {
-        res.add(NibTheme.current.muted.text('... (${lines.length - maxDiffLines} more lines)'));
+        res.add(
+          NibTheme.current.muted.text(
+            '... (${lines.length - maxDiffLines} more lines)',
+          ),
+        );
       }
       return res;
     }
@@ -316,12 +349,18 @@ class CliUi {
     final shown = lines.take(maxPreviewLines).toList();
     final res = <String>[];
     for (final line in shown) {
-      final truncated = line.length > 100 ? '${line.substring(0, 97)}...' : line;
+      final truncated = line.length > 100
+          ? '${line.substring(0, 97)}...'
+          : line;
       res.add(NibTheme.current.muted.text(truncated));
     }
 
     if (lines.length > maxPreviewLines) {
-      res.add(NibTheme.current.muted.text('... (${lines.length - maxPreviewLines} more lines)'));
+      res.add(
+        NibTheme.current.muted.text(
+          '... (${lines.length - maxPreviewLines} more lines)',
+        ),
+      );
     }
 
     return res;

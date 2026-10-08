@@ -6,8 +6,6 @@ import 'theme.dart';
 
 /// Interactive arrow-key navigation session picker for resuming saved conversations.
 class SessionPicker {
-  static final Console _console = Console();
-
   /// Prompts the user to pick a saved conversation session using an interactive menu.
   static Future<String?> pickSession({
     AgentSession? currentSession,
@@ -16,7 +14,11 @@ class SessionPicker {
     final sessions = await AgentSession.listSavedSessions();
     if (sessions.isEmpty) {
       final theme = NibTheme.current;
-      stdout.writeln(theme.warning.text('  No saved sessions found across ~/.nib/sessions or ~/.tau/sessions.'));
+      stdout.writeln(
+        theme.warning.text(
+          '  No saved sessions found across ~/.nib/sessions or ~/.tau/sessions.',
+        ),
+      );
       return null;
     }
 
@@ -88,7 +90,9 @@ class SessionPicker {
     NibTheme theme,
   ) {
     stdout.writeln();
-    stdout.writeln('  ${theme.muted.text('╭─')} ${theme.accent.text('Select Session to Resume')} ${theme.muted.text('─────────────────────────────────────────╮')}');
+    stdout.writeln(
+      '  ${theme.muted.text('╭─')} ${theme.accent.text('Select Session to Resume')} ${theme.muted.text('─────────────────────────────────────────╮')}',
+    );
 
     for (int i = 0; i < items.length; i++) {
       final item = items[i];
@@ -106,17 +110,27 @@ class SessionPicker {
       final previewStr = preview.isNotEmpty ? preview : '(empty)';
       final currentTag = isCurrent ? ' ${theme.success.text('[active]')}' : '';
 
-      final truncatedPreview = previewStr.length > 34 ? '${previewStr.substring(0, 31)}...' : previewStr;
+      final truncatedPreview = previewStr.length > 34
+          ? '${previewStr.substring(0, 31)}...'
+          : previewStr;
 
       if (isSelected) {
-        stdout.writeln('  ${theme.muted.text('│')} $pointer $indexStr ${theme.accent.text(dateStr)} $turnsStr ${theme.surface.bg}${theme.accent.text(" $truncatedPreview ")}\x1B[0m$currentTag');
+        stdout.writeln(
+          '  ${theme.muted.text('│')} $pointer $indexStr ${theme.accent.text(dateStr)} $turnsStr ${theme.surface.bg}${theme.accent.text(" $truncatedPreview ")}\x1B[0m$currentTag',
+        );
       } else {
-        stdout.writeln('  ${theme.muted.text('│')} $pointer $indexStr ${theme.muted.text(dateStr)} $turnsStr ${theme.primary.text(truncatedPreview)}$currentTag');
+        stdout.writeln(
+          '  ${theme.muted.text('│')} $pointer $indexStr ${theme.muted.text(dateStr)} $turnsStr ${theme.primary.text(truncatedPreview)}$currentTag',
+        );
       }
     }
 
-    stdout.writeln('  ${theme.muted.text('╰─────────────────────────────────────────────────────────────────╯')}');
-    stdout.writeln('  ${theme.muted.text('Use ↑/↓ arrows to navigate, Enter to load, 1-${items.length} to select, Esc/q to cancel')}');
+    stdout.writeln(
+      '  ${theme.muted.text('╰─────────────────────────────────────────────────────────────────╯')}',
+    );
+    stdout.writeln(
+      '  ${theme.muted.text('Use ↑/↓ arrows to navigate, Enter to load, 1-${items.length} to select, Esc/q to cancel')}',
+    );
   }
 
   static void _clearMenu(int itemCount) {

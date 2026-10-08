@@ -4,7 +4,11 @@ import 'ansi.dart';
 /// Utility to generate and highlight unified diffs for terminal display.
 class DiffFormatter {
   /// Generates ANSI color-highlighted unified diff lines between [oldText] and [newText].
-  static List<String> formatDiff(String oldText, String newText, {int contextLines = 3}) {
+  static List<String> formatDiff(
+    String oldText,
+    String newText, {
+    int contextLines = 3,
+  }) {
     final oldLines = oldText.isEmpty ? <String>[] : oldText.split('\n');
     final newLines = newText.isEmpty ? <String>[] : newText.split('\n');
 
@@ -39,7 +43,9 @@ class DiffFormatter {
         buf.writeln('    $line');
       }
       if (diff.length > maxDisplay) {
-        buf.writeln('    ${Ansi.dimText('... (${diff.length - maxDisplay} more diff lines)')}');
+        buf.writeln(
+          '    ${Ansi.dimText('... (${diff.length - maxDisplay} more diff lines)')}',
+        );
       }
     }
     return buf.toString().trimRight();
@@ -47,8 +53,12 @@ class DiffFormatter {
 
   static List<_DiffItem> _computeDiff(List<String> a, List<String> b) {
     if (a.isEmpty && b.isEmpty) return [];
-    if (a.isEmpty) return b.map((l) => _DiffItem(_DiffType.addition, l)).toList();
-    if (b.isEmpty) return a.map((l) => _DiffItem(_DiffType.deletion, l)).toList();
+    if (a.isEmpty) {
+      return b.map((l) => _DiffItem(_DiffType.addition, l)).toList();
+    }
+    if (b.isEmpty) {
+      return a.map((l) => _DiffItem(_DiffType.deletion, l)).toList();
+    }
 
     final result = diffutil.calculateListDiff(a, b, detectMoves: false);
     final updates = result.getUpdatesWithData().toList();
@@ -73,14 +83,16 @@ class DiffFormatter {
 
     while (oldIdx < a.length || newIdx < b.length) {
       // 1. Deletion from old lines
-      if (oldIdx < a.length && (removedOldIndices.contains(oldIdx) || newIdx >= b.length)) {
+      if (oldIdx < a.length &&
+          (removedOldIndices.contains(oldIdx) || newIdx >= b.length)) {
         items.add(_DiffItem(_DiffType.deletion, a[oldIdx]));
         oldIdx++;
         continue;
       }
 
       // 2. Addition from new lines
-      if (newIdx < b.length && (insertedNewIndices.containsKey(newIdx) || oldIdx >= a.length)) {
+      if (newIdx < b.length &&
+          (insertedNewIndices.containsKey(newIdx) || oldIdx >= a.length)) {
         items.add(_DiffItem(_DiffType.addition, b[newIdx]));
         newIdx++;
         continue;

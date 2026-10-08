@@ -15,5 +15,6 @@ abstract class LLMProvider {
     required List<ChatMessage> messages,
     required List<AgentTool> tools,
     double? temperature,
+    int? maxTokens,
   });
 }

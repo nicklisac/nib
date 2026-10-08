@@ -9,7 +9,8 @@ class CompactionManager {
   static const int defaultCompactionReserveTokens = 16384;
   static const int defaultKeepRecentMessages = 4; // Keep recent turns intact
   static const int summaryMessageCharLimit = 500;
-  static const String compactionSummaryPrefix = 'Previous conversation summary:\n';
+  static const String compactionSummaryPrefix =
+      'Previous conversation summary:\n';
 
   static const String summarizationSystemPrompt =
       'You are a context summarization assistant. Your task is to read a conversation '
@@ -44,7 +45,10 @@ class CompactionManager {
       '- [Or "(none)" if not applicable]\n\n'
       'Keep each section concise. Preserve exact file paths, function names, and error messages.';
 
-  static int estimateTokens(List<ChatMessage> messages, {String? systemPrompt}) {
+  static int estimateTokens(
+    List<ChatMessage> messages, {
+    String? systemPrompt,
+  }) {
     int chars = systemPrompt?.length ?? 0;
     for (final m in messages) {
       chars += (m.content?.length ?? 0) + 16;
@@ -67,7 +71,10 @@ class CompactionManager {
       return false;
     }
     final threshold = contextWindow - reserve;
-    final estimated = estimateTokens(session.messages, systemPrompt: session.systemPrompt);
+    final estimated = estimateTokens(
+      session.messages,
+      systemPrompt: session.systemPrompt,
+    );
     return estimated >= threshold;
   }
 
@@ -88,8 +95,14 @@ class CompactionManager {
         success: false,
         summary: '',
         replacedMessageCount: 0,
-        tokensBefore: estimateTokens(allMessages, systemPrompt: session.systemPrompt),
-        tokensAfter: estimateTokens(allMessages, systemPrompt: session.systemPrompt),
+        tokensBefore: estimateTokens(
+          allMessages,
+          systemPrompt: session.systemPrompt,
+        ),
+        tokensAfter: estimateTokens(
+          allMessages,
+          systemPrompt: session.systemPrompt,
+        ),
       );
     }
 
@@ -97,7 +110,10 @@ class CompactionManager {
     final messagesToSummarize = allMessages.sublist(0, splitIndex);
     final messagesToKeep = allMessages.sublist(splitIndex);
 
-    final tokensBefore = estimateTokens(allMessages, systemPrompt: session.systemPrompt);
+    final tokensBefore = estimateTokens(
+      allMessages,
+      systemPrompt: session.systemPrompt,
+    );
 
     // Build the serialized conversation log for summarization
     final serialized = _serializeMessagesForCompaction(messagesToSummarize);
@@ -125,7 +141,10 @@ class CompactionManager {
 
     await session.saveToDisk();
 
-    final tokensAfter = estimateTokens(session.messages, systemPrompt: session.systemPrompt);
+    final tokensAfter = estimateTokens(
+      session.messages,
+      systemPrompt: session.systemPrompt,
+    );
 
     return CompactionResult(
       success: true,
@@ -207,9 +226,9 @@ class CompactionManager {
       orElse: () => messages.first,
     );
     final userText = firstUser.content ?? '';
-    buf.writeln(userText.length > 200
-        ? '${userText.substring(0, 197)}...'
-        : userText);
+    buf.writeln(
+      userText.length > 200 ? '${userText.substring(0, 197)}...' : userText,
+    );
 
     buf.writeln('\n## Progress');
     buf.writeln('### Done');
@@ -217,7 +236,9 @@ class CompactionManager {
     for (final m in messages) {
       if (m.toolCalls != null) toolCount += m.toolCalls!.length;
     }
-    buf.writeln('- [x] Compacted ${messages.length} prior conversation entries ($toolCount tool actions executed).');
+    buf.writeln(
+      '- [x] Compacted ${messages.length} prior conversation entries ($toolCount tool actions executed).',
+    );
 
     buf.writeln('\n## Critical Context');
     buf.writeln('- Retained active working directory & recent turns.');

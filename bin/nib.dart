@@ -26,17 +26,20 @@ void main(List<String> arguments) async {
     ..addOption(
       'config',
       abbr: 'c',
-      help: 'Custom config file path (default: ~/.nib/config.json with ~/.tart / ~/.tau fallback).',
+      help:
+          'Custom config file path (default: ~/.nib/config.json with ~/.tart / ~/.tau fallback).',
     )
     ..addOption(
       'provider',
       abbr: 'p',
-      help: 'LLM provider (e.g. exllama, unsloth, openai, anthropic, ollama, mock).',
+      help:
+          'LLM provider (e.g. exllama, unsloth, openai, anthropic, ollama, mock).',
     )
     ..addOption(
       'model',
       abbr: 'm',
-      help: 'Model name (e.g. Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6, gpt-4o).',
+      help:
+          'Model name (e.g. Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6, gpt-4o).',
     )
     ..addOption(
       'theme',
@@ -46,7 +49,8 @@ void main(List<String> arguments) async {
     )
     ..addFlag(
       'confirm',
-      help: 'Require confirmation before writing files or running destructive commands.',
+      help:
+          'Require confirmation before writing files or running destructive commands.',
       negatable: false,
     )
     ..addOption(
@@ -56,7 +60,8 @@ void main(List<String> arguments) async {
     )
     ..addOption(
       'base-url',
-      help: 'Custom API base URL (e.g. http://localhost:5000/v1 for tabbyAPI/exllama).',
+      help:
+          'Custom API base URL (e.g. http://localhost:5000/v1 for tabbyAPI/exllama).',
     )
     ..addFlag(
       'resume',
@@ -64,21 +69,13 @@ void main(List<String> arguments) async {
       help: 'Resume the most recent conversation session.',
       negatable: false,
     )
-    ..addOption(
-      'session',
-      help: 'Resume a specific session ID.',
-    )
+    ..addOption('session', help: 'Resume a specific session ID.')
     ..addFlag(
       'mock',
       help: 'Run in offline demo mode without calling external APIs.',
       negatable: false,
     )
-    ..addFlag(
-      'help',
-      abbr: 'h',
-      help: 'Show command help.',
-      negatable: false,
-    );
+    ..addFlag('help', abbr: 'h', help: 'Show command help.', negatable: false);
 
   ArgResults results;
   try {
@@ -127,8 +124,11 @@ void main(List<String> arguments) async {
     final provConf = config.providers[providerId]!;
     final model = explicitModel ?? provConf.model;
     final baseUrl = explicitBaseUrl ?? provConf.baseUrl;
-    final apiKey = explicitKey ??
-        (provConf.apiKey.isNotEmpty ? provConf.apiKey : env['EXLLAMA_API_KEY'] ?? '');
+    final apiKey =
+        explicitKey ??
+        (provConf.apiKey.isNotEmpty
+            ? provConf.apiKey
+            : env['EXLLAMA_API_KEY'] ?? '');
 
     provider = OpenAiProvider(
       name: provConf.name,
@@ -185,7 +185,11 @@ void main(List<String> arguments) async {
       final loaded = await AgentSession.loadFromDisk(targetId);
       if (loaded != null) {
         session = loaded;
-        stdout.writeln(NibTheme.current.success.text('  ✔ Resumed session "$targetId" (${loaded.messages.length} messages)'));
+        stdout.writeln(
+          NibTheme.current.success.text(
+            '  ✔ Resumed session "$targetId" (${loaded.messages.length} messages)',
+          ),
+        );
       } else {
         session = AgentSession();
       }
@@ -198,9 +202,17 @@ void main(List<String> arguments) async {
     final loaded = await AgentSession.loadFromDisk(sId);
     if (loaded != null) {
       session = loaded;
-      stdout.writeln(NibTheme.current.success.text('  ✔ Resumed session "$sId" (${loaded.messages.length} messages)'));
+      stdout.writeln(
+        NibTheme.current.success.text(
+          '  ✔ Resumed session "$sId" (${loaded.messages.length} messages)',
+        ),
+      );
     } else {
-      stderr.writeln(NibTheme.current.warning.text('  Session "$sId" not found. Starting fresh session.'));
+      stderr.writeln(
+        NibTheme.current.warning.text(
+          '  Session "$sId" not found. Starting fresh session.',
+        ),
+      );
       session = AgentSession();
     }
   } else {
@@ -223,13 +235,16 @@ void main(List<String> arguments) async {
   ];
 
   final activeProviderConf = config.providers[providerId];
-  final activeContextWindow = activeProviderConf?.contextWindow ?? config.contextWindow;
+  final activeContextWindow =
+      activeProviderConf?.contextWindow ?? config.contextWindow;
+  final activeMaxTokens = activeProviderConf?.maxTokens ?? config.maxTokens;
 
   final agent = Agent(
     provider: provider,
     session: session,
     tools: tools,
     contextWindow: activeContextWindow,
+    maxTokens: activeMaxTokens,
   );
 
   final ui = CliUi(agent, config);
@@ -240,8 +255,16 @@ void main(List<String> arguments) async {
     final remaining = results.rest;
     if (remaining.isNotEmpty) {
       final prompt = remaining.join(' ');
-      stdout.writeln(Ansi.banner(model: provider.model, provider: provider.name, workspace: workspace));
-      stdout.writeln('${NibTheme.current.accent.text('nib')} ${NibTheme.current.secondary.text('❯')} $prompt');
+      stdout.writeln(
+        Ansi.banner(
+          model: provider.model,
+          provider: provider.name,
+          workspace: workspace,
+        ),
+      );
+      stdout.writeln(
+        '${NibTheme.current.accent.text('nib')} ${NibTheme.current.secondary.text('❯')} $prompt',
+      );
       await ui.runWithPrompt(prompt);
       TerminalManager.instance.dispose();
       exit(0);

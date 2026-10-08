@@ -1,11 +1,21 @@
 import 'dart:async';
 import 'dart:io';
-import 'ansi.dart';
 import 'theme.dart';
 
 /// Smooth terminal animated spinner for live thinking, tool execution, and token speed tracking.
 class TerminalSpinner {
-  static const List<String> _frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  static const List<String> _frames = [
+    '⠋',
+    '⠙',
+    '⠹',
+    '⠸',
+    '⠼',
+    '⠴',
+    '⠦',
+    '⠧',
+    '⠇',
+    '⠏',
+  ];
 
   String _message = '';
   Timer? _timer;
@@ -53,7 +63,9 @@ class TerminalSpinner {
     stop();
     final ms = _stopwatch.elapsedMilliseconds;
     final theme = NibTheme.current;
-    stdout.writeln('  ${theme.success.text('✔')} $finalMessage ${theme.muted.text('(${ms}ms)')}');
+    stdout.writeln(
+      '  ${theme.success.text('✔')} $finalMessage ${theme.muted.text('(${ms}ms)')}',
+    );
   }
 
   void failure(String finalMessage) {
@@ -78,7 +90,8 @@ class TerminalSpinner {
       }
     }
 
-    final line = '  ${theme.warning.text(frame)} $_message ${theme.muted.text('[$elapsed]')}$rateInfo';
+    final line =
+        '  ${theme.warning.text(frame)} $_message ${theme.muted.text('[$elapsed]')}$rateInfo';
     stdout.write('\r\x1B[2K$line');
   }
 

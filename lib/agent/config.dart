@@ -23,7 +23,8 @@ class ProviderConfig {
     return ProviderConfig(
       name: json['name'] as String? ?? id,
       model: json['model'] as String? ?? 'default',
-      baseUrl: (json['base_url'] as String? ?? 'https://api.openai.com/v1').replaceAll(RegExp(r'/+$'), ''),
+      baseUrl: (json['base_url'] as String? ?? 'https://api.openai.com/v1')
+          .replaceAll(RegExp(r'/+$'), ''),
       apiKey: json['api_key'] as String? ?? '',
       contextWindow: (json['context_window'] as num?)?.toInt(),
       maxTokens: (json['max_tokens'] as num?)?.toInt(),
@@ -31,13 +32,13 @@ class ProviderConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'model': model,
-        'base_url': baseUrl,
-        'api_key': apiKey,
-        if (contextWindow != null) 'context_window': contextWindow,
-        if (maxTokens != null) 'max_tokens': maxTokens,
-      };
+    'name': name,
+    'model': model,
+    'base_url': baseUrl,
+    'api_key': apiKey,
+    if (contextWindow != null) 'context_window': contextWindow,
+    if (maxTokens != null) 'max_tokens': maxTokens,
+  };
 }
 
 /// Manages Nib configuration loaded from ~/.nib/config.json (or ~/.tart / ~/.tau config fallback).
@@ -64,7 +65,7 @@ class NibConfig {
 
     // Candidate configuration paths in priority order
     final candidates = <String>[
-      if (customPath != null) customPath,
+      ?customPath,
       if (home.isNotEmpty) p.join(home, '.nib', 'config.json'),
       if (home.isNotEmpty) p.join(home, '.tart', 'config.json'),
     ];
@@ -90,7 +91,9 @@ class NibConfig {
 
           // Check for append system prompt
           String? appendPrompt;
-          final appendFile = File(p.join(p.dirname(configPath), 'APPEND_SYSTEM.md'));
+          final appendFile = File(
+            p.join(p.dirname(configPath), 'APPEND_SYSTEM.md'),
+          );
           if (await appendFile.exists()) {
             appendPrompt = await appendFile.readAsString();
           }
@@ -124,7 +127,9 @@ class NibConfig {
       final creds = <String, String>{};
       if (await credsFile.exists()) {
         try {
-          final rawCreds = jsonDecode(await credsFile.readAsString()) as Map<String, dynamic>;
+          final rawCreds =
+              jsonDecode(await credsFile.readAsString())
+                  as Map<String, dynamic>;
           for (final e in rawCreds.entries) {
             if (e.value is String) creds[e.key] = e.value as String;
           }

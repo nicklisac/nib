@@ -56,7 +56,13 @@ print("hello world");
       final tableLines = rendered
           .split('\n')
           .map((l) => l.trim())
-          .where((l) => l.startsWith('╭') || l.startsWith('│') || l.startsWith('├') || l.startsWith('╰'))
+          .where(
+            (l) =>
+                l.startsWith('╭') ||
+                l.startsWith('│') ||
+                l.startsWith('├') ||
+                l.startsWith('╰'),
+          )
           .toList();
       expect(tableLines, isNotEmpty);
       final widths = tableLines.map((l) {
@@ -64,7 +70,11 @@ print("hello world");
         return clean.runes.length;
       }).toSet();
       print('Table line widths: $widths');
-      expect(widths.length, equals(1), reason: 'All table rows must have matching widths: $widths');
+      expect(
+        widths.length,
+        equals(1),
+        reason: 'All table rows must have matching widths: $widths',
+      );
     });
 
     test('renders user screenshot table with alignment markers', () {
@@ -95,67 +105,90 @@ print("hello world");
       final tableLines = rendered
           .split('\n')
           .map((l) => l.trim())
-          .where((l) => l.startsWith('╭') || l.startsWith('│') || l.startsWith('├') || l.startsWith('╰'))
+          .where(
+            (l) =>
+                l.startsWith('╭') ||
+                l.startsWith('│') ||
+                l.startsWith('├') ||
+                l.startsWith('╰'),
+          )
           .toList();
       expect(tableLines, isNotEmpty);
       final widths = tableLines.map((l) {
         final clean = l.replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '');
         return clean.runes.length;
       }).toSet();
-      expect(widths.length, equals(1), reason: 'All table rows must have matching widths: $widths');
-    });
-
-    test('StreamingMarkdownPrinter renders streamed tokens with code fences and tables', () {
-      final buffer = StringBuffer();
-      final printer = StreamingMarkdownPrinter(
-        theme: NibTheme.tokyoNight,
-        out: (s) => buffer.write(s),
+      expect(
+        widths.length,
+        equals(1),
+        reason: 'All table rows must have matching widths: $widths',
       );
-
-      // Simulate streaming deltas chunk-by-chunk
-      final chunks = [
-        'Here is ',
-        'a breakdown:\n\n',
-        '## Files\n',
-        '| File | Type | Status |\n',
-        '|:---|:---:|---:|\n',
-        '| `main.dart` | entry | active |\n',
-        '| `test.dart` | `unit` | passed |\n\n',
-        'And some code:\n',
-        '```dart\n',
-        'void main() {\n',
-        '  print("streaming");\n',
-        '}\n',
-        '```\n',
-        'Done!',
-      ];
-
-      for (final chunk in chunks) {
-        printer.addDelta(chunk);
-      }
-      printer.flush();
-
-      final output = buffer.toString();
-      expect(output, contains('Files'));
-      expect(output, contains('main.dart'));
-      expect(output, contains('streaming'));
-      expect(output, contains('Done!'));
-      expect(output, isNot(contains('|:---|')));
-      expect(output, anyOf(contains('╭'), contains('│')));
-
-      // Geometry check on streamed table
-      final tableLines = output
-          .split('\n')
-          .map((l) => l.trim())
-          .where((l) => l.startsWith('╭') || l.startsWith('│') || l.startsWith('├') || l.startsWith('╰'))
-          .toList();
-      expect(tableLines, isNotEmpty);
-      final widths = tableLines.map((l) {
-        final clean = l.replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '');
-        return clean.runes.length;
-      }).toSet();
-      expect(widths.length, equals(1), reason: 'All table lines in stream must match in width: $widths');
     });
+
+    test(
+      'StreamingMarkdownPrinter renders streamed tokens with code fences and tables',
+      () {
+        final buffer = StringBuffer();
+        final printer = StreamingMarkdownPrinter(
+          theme: NibTheme.tokyoNight,
+          out: (s) => buffer.write(s),
+        );
+
+        // Simulate streaming deltas chunk-by-chunk
+        final chunks = [
+          'Here is ',
+          'a breakdown:\n\n',
+          '## Files\n',
+          '| File | Type | Status |\n',
+          '|:---|:---:|---:|\n',
+          '| `main.dart` | entry | active |\n',
+          '| `test.dart` | `unit` | passed |\n\n',
+          'And some code:\n',
+          '```dart\n',
+          'void main() {\n',
+          '  print("streaming");\n',
+          '}\n',
+          '```\n',
+          'Done!',
+        ];
+
+        for (final chunk in chunks) {
+          printer.addDelta(chunk);
+        }
+        printer.flush();
+
+        final output = buffer.toString();
+        expect(output, contains('Files'));
+        expect(output, contains('main.dart'));
+        expect(output, contains('streaming'));
+        expect(output, contains('Done!'));
+        expect(output, isNot(contains('|:---|')));
+        expect(output, anyOf(contains('╭'), contains('│')));
+
+        // Geometry check on streamed table
+        final tableLines = output
+            .split('\n')
+            .map((l) => l.trim())
+            .where(
+              (l) =>
+                  l.startsWith('╭') ||
+                  l.startsWith('│') ||
+                  l.startsWith('├') ||
+                  l.startsWith('╰'),
+            )
+            .toList();
+        expect(tableLines, isNotEmpty);
+        final widths = tableLines.map((l) {
+          final clean = l.replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '');
+          return clean.runes.length;
+        }).toSet();
+        expect(
+          widths.length,
+          equals(1),
+          reason: 'All table lines in stream must match in width: $widths',
+        );
+      },
+    );
 
     test('renders full markdown gauntlet cleanly', () {
       final markdown = '''
@@ -219,7 +252,10 @@ def gate(pr: dict) -> bool:
       expect(rendered, isNot(contains('@@ESC')));
 
       // 2. Syntax highlighting must preserve quotes and comments
-      expect(rendered, contains('"""The Tech Lead approves. Nothing else merges."""'));
+      expect(
+        rendered,
+        contains('"""The Tech Lead approves. Nothing else merges."""'),
+      );
       expect(rendered, contains('# only I do this'));
 
       // 3. Task lists must render with checkboxes and nested hierarchy

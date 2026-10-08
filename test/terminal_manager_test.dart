@@ -19,22 +19,25 @@ void main() {
       expect(left.first.controlChar, equals(ControlCharacter.arrowLeft));
     });
 
-    test('decodes extended navigation keys (Delete, Home, End, PageUp, PageDown)', () {
-      final del = KeyDecoder.decode([27, 91, 51, 126]);
-      expect(del.first.controlChar, equals(ControlCharacter.delete));
+    test(
+      'decodes extended navigation keys (Delete, Home, End, PageUp, PageDown)',
+      () {
+        final del = KeyDecoder.decode([27, 91, 51, 126]);
+        expect(del.first.controlChar, equals(ControlCharacter.delete));
 
-      final home = KeyDecoder.decode([27, 91, 49, 126]);
-      expect(home.first.controlChar, equals(ControlCharacter.home));
+        final home = KeyDecoder.decode([27, 91, 49, 126]);
+        expect(home.first.controlChar, equals(ControlCharacter.home));
 
-      final end = KeyDecoder.decode([27, 91, 52, 126]);
-      expect(end.first.controlChar, equals(ControlCharacter.end));
+        final end = KeyDecoder.decode([27, 91, 52, 126]);
+        expect(end.first.controlChar, equals(ControlCharacter.end));
 
-      final pageUp = KeyDecoder.decode([27, 91, 53, 126]);
-      expect(pageUp.first.controlChar, equals(ControlCharacter.pageUp));
+        final pageUp = KeyDecoder.decode([27, 91, 53, 126]);
+        expect(pageUp.first.controlChar, equals(ControlCharacter.pageUp));
 
-      final pageDown = KeyDecoder.decode([27, 91, 54, 126]);
-      expect(pageDown.first.controlChar, equals(ControlCharacter.pageDown));
-    });
+        final pageDown = KeyDecoder.decode([27, 91, 54, 126]);
+        expect(pageDown.first.controlChar, equals(ControlCharacter.pageDown));
+      },
+    );
 
     test('decodes control characters (Enter, Tab, Backspace, Esc, Ctrl+C)', () {
       final enter = KeyDecoder.decode([10]);
@@ -64,13 +67,16 @@ void main() {
       expect(emoji.first.char, equals('🚀'));
     });
 
-    test('decodes mixed stream of keys including escape and arrow in single burst', () {
-      // "hi" followed by Up Arrow
-      final burst = KeyDecoder.decode([104, 105, 27, 91, 65]);
-      expect(burst.length, equals(3));
-      expect(burst[0].char, equals('h'));
-      expect(burst[1].char, equals('i'));
-      expect(burst[2].controlChar, equals(ControlCharacter.arrowUp));
-    });
+    test(
+      'decodes mixed stream of keys including escape and arrow in single burst',
+      () {
+        // "hi" followed by Up Arrow
+        final burst = KeyDecoder.decode([104, 105, 27, 91, 65]);
+        expect(burst.length, equals(3));
+        expect(burst[0].char, equals('h'));
+        expect(burst[1].char, equals('i'));
+        expect(burst[2].controlChar, equals(ControlCharacter.arrowUp));
+      },
+    );
   });
 }

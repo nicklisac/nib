@@ -21,25 +21,28 @@ void main() {
       }
     });
 
-    test('WriteFileTool creates file and ReadFileTool reads with line numbers', () async {
-      final writeTool = WriteFileTool(workingDirectory: tempDir.path);
-      final readTool = ReadFileTool(workingDirectory: tempDir.path);
+    test(
+      'WriteFileTool creates file and ReadFileTool reads with line numbers',
+      () async {
+        final writeTool = WriteFileTool(workingDirectory: tempDir.path);
+        final readTool = ReadFileTool(workingDirectory: tempDir.path);
 
-      final writeRes = await writeTool.execute({
-        'path': 'hello.txt',
-        'content': 'Line 1\nLine 2\nLine 3',
-      });
-      expect(writeRes, contains('Successfully wrote 3 lines'));
+        final writeRes = await writeTool.execute({
+          'path': 'hello.txt',
+          'content': 'Line 1\nLine 2\nLine 3',
+        });
+        expect(writeRes, contains('Successfully wrote 3 lines'));
 
-      final readRes = await readTool.execute({
-        'path': 'hello.txt',
-        'start_line': 1,
-        'end_line': 2,
-      });
-      expect(readRes, contains('1 | Line 1'));
-      expect(readRes, contains('2 | Line 2'));
-      expect(readRes, isNot(contains('Line 3')));
-    });
+        final readRes = await readTool.execute({
+          'path': 'hello.txt',
+          'start_line': 1,
+          'end_line': 2,
+        });
+        expect(readRes, contains('1 | Line 1'));
+        expect(readRes, contains('2 | Line 2'));
+        expect(readRes, isNot(contains('Line 3')));
+      },
+    );
 
     test('EditFileTool replaces targeted block cleanly', () async {
       final writeTool = WriteFileTool(workingDirectory: tempDir.path);
@@ -102,11 +105,30 @@ void main() {
       final listTool = ListDirTool(workingDirectory: tempDir.path);
       final searchTool = SearchFilesTool(workingDirectory: tempDir.path);
 
-      expect(await writeTool.execute({'path': '../evil.txt', 'content': 'bad'}), contains('outside workspace'));
-      expect(await readTool.execute({'path': '../evil.txt'}), contains('outside workspace'));
-      expect(await editTool.execute({'path': '../evil.txt', 'target_content': 'a', 'replacement_content': 'b'}), contains('outside workspace'));
-      expect(await listTool.execute({'path': '..'}), contains('outside workspace'));
-      expect(await searchTool.execute({'path': '..', 'query': 'secret'}), contains('outside workspace'));
+      expect(
+        await writeTool.execute({'path': '../evil.txt', 'content': 'bad'}),
+        contains('outside workspace'),
+      );
+      expect(
+        await readTool.execute({'path': '../evil.txt'}),
+        contains('outside workspace'),
+      );
+      expect(
+        await editTool.execute({
+          'path': '../evil.txt',
+          'target_content': 'a',
+          'replacement_content': 'b',
+        }),
+        contains('outside workspace'),
+      );
+      expect(
+        await listTool.execute({'path': '..'}),
+        contains('outside workspace'),
+      );
+      expect(
+        await searchTool.execute({'path': '..', 'query': 'secret'}),
+        contains('outside workspace'),
+      );
     });
   });
 }

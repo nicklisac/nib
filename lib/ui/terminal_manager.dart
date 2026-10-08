@@ -13,7 +13,8 @@ class TerminalManager {
   TerminalManager._();
 
   final Console _console = Console();
-  final StreamController<Key> _keyController = StreamController<Key>.broadcast();
+  final StreamController<Key> _keyController =
+      StreamController<Key>.broadcast();
   final List<Key> _bufferedKeys = [];
   Completer<Key>? _pendingNextKey;
   StreamSubscription<List<int>>? _stdinSub;
@@ -39,11 +40,7 @@ class TerminalManager {
 
     if (stdin.hasTerminal) {
       enableRawMode();
-      _stdinSub = stdin.listen(
-        _onData,
-        onError: (_) {},
-        onDone: () {},
-      );
+      _stdinSub = stdin.listen(_onData, onError: (_) {}, onDone: () {});
     }
   }
 
@@ -164,7 +161,7 @@ class KeyDecoder {
         final next = bytes[i + 1];
 
         // CSI sequence: ESC [
-        if (next == 0x5B /* '[' */) {
+        if (next == 0x5B /* '[' */ ) {
           if (i + 2 < bytes.length) {
             final csi = bytes[i + 2];
             switch (csi) {
@@ -194,7 +191,7 @@ class KeyDecoder {
                 continue;
               default:
                 // Extended sequence e.g. ESC [ 3 ~ (Delete)
-                if (i + 3 < bytes.length && bytes[i + 3] == 0x7E /* '~' */) {
+                if (i + 3 < bytes.length && bytes[i + 3] == 0x7E /* '~' */ ) {
                   switch (csi) {
                     case 0x31: // '1'
                       keys.add(Key.control(ControlCharacter.home));

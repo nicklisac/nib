@@ -21,7 +21,8 @@ void main() {
     });
 
     test('visibleWidth accurately strips 24-bit TrueColor and ANSI codes', () {
-      const styledPrompt = '\x1B[38;2;137;180;250mnib\x1B[0m \x1B[38;2;203;166;247m❯\x1B[0m ';
+      const styledPrompt =
+          '\x1B[38;2;137;180;250mnib\x1B[0m \x1B[38;2;203;166;247m❯\x1B[0m ';
       final width = PromptReader.visibleWidth(styledPrompt);
       expect(width, equals(6)); // 'nib ❯ '
     });

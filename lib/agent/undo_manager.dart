@@ -26,11 +26,13 @@ class UndoManager {
     required String contentBefore,
     required String contentAfter,
   }) {
-    _history.add(FileSnapshot(
-      path: path,
-      contentBefore: contentBefore,
-      contentAfter: contentAfter,
-    ));
+    _history.add(
+      FileSnapshot(
+        path: path,
+        contentBefore: contentBefore,
+        contentAfter: contentAfter,
+      ),
+    );
   }
 
   bool get canUndo => _history.isNotEmpty;
@@ -47,9 +49,15 @@ class UndoManager {
       await file.delete();
       return 'Deleted newly created file "${snapshot.path}"';
     } else {
-      final currentContent = await file.exists() ? await file.readAsString() : '';
+      final currentContent = await file.exists()
+          ? await file.readAsString()
+          : '';
       await file.writeAsString(snapshot.contentBefore);
-      final diff = DiffFormatter.formatSummary(snapshot.path, currentContent, snapshot.contentBefore);
+      final diff = DiffFormatter.formatSummary(
+        snapshot.path,
+        currentContent,
+        snapshot.contentBefore,
+      );
       return 'Reverted "${snapshot.path}":\n$diff';
     }
   }

@@ -12,7 +12,7 @@ class BashTool extends AgentTool {
   Timer? _escalateTimer;
 
   BashTool({String? workingDirectory})
-      : workingDirectory = workingDirectory ?? Directory.current.path;
+    : workingDirectory = workingDirectory ?? Directory.current.path;
 
   @override
   void cancel() {
@@ -39,19 +39,19 @@ class BashTool extends AgentTool {
 
   @override
   Map<String, dynamic> get parameters => {
-        'type': 'object',
-        'properties': {
-          'command': {
-            'type': 'string',
-            'description': 'The bash command line string to execute.',
-          },
-          'timeout_seconds': {
-            'type': 'integer',
-            'description': 'Optional execution timeout in seconds (default: 60).',
-          },
-        },
-        'required': ['command'],
-      };
+    'type': 'object',
+    'properties': {
+      'command': {
+        'type': 'string',
+        'description': 'The bash command line string to execute.',
+      },
+      'timeout_seconds': {
+        'type': 'integer',
+        'description': 'Optional execution timeout in seconds (default: 60).',
+      },
+    },
+    'required': ['command'],
+  };
 
   @override
   Future<String> execute(Map<String, dynamic> arguments) async {
@@ -60,7 +60,8 @@ class BashTool extends AgentTool {
       return 'Error: No command provided';
     }
 
-    final timeoutSeconds = (arguments['timeout_seconds'] as num?)?.toInt() ?? 60;
+    final timeoutSeconds =
+        (arguments['timeout_seconds'] as num?)?.toInt() ?? 60;
 
     final approved = await ApprovalManager.instance.confirmBashCommand(command);
     if (!approved) {
@@ -79,29 +80,31 @@ class BashTool extends AgentTool {
       final outBuffer = StringBuffer();
       final errBuffer = StringBuffer();
 
-      final outSub = process.stdout
-          .transform(utf8.decoder)
-          .listen((chunk) {
-            outBuffer.write(chunk);
-            if (onProgress != null) {
-              final lastLine = chunk.trim().split('\n').lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
-              if (lastLine.isNotEmpty) {
-                onProgress!(lastLine);
-              }
-            }
-          });
+      final outSub = process.stdout.transform(utf8.decoder).listen((chunk) {
+        outBuffer.write(chunk);
+        if (onProgress != null) {
+          final lastLine = chunk
+              .trim()
+              .split('\n')
+              .lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+          if (lastLine.isNotEmpty) {
+            onProgress!(lastLine);
+          }
+        }
+      });
 
-      final errSub = process.stderr
-          .transform(utf8.decoder)
-          .listen((chunk) {
-            errBuffer.write(chunk);
-            if (onProgress != null) {
-              final lastLine = chunk.trim().split('\n').lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
-              if (lastLine.isNotEmpty) {
-                onProgress!(lastLine);
-              }
-            }
-          });
+      final errSub = process.stderr.transform(utf8.decoder).listen((chunk) {
+        errBuffer.write(chunk);
+        if (onProgress != null) {
+          final lastLine = chunk
+              .trim()
+              .split('\n')
+              .lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+          if (lastLine.isNotEmpty) {
+            onProgress!(lastLine);
+          }
+        }
+      });
 
       bool timedOut = false;
       final timer = Timer(Duration(seconds: timeoutSeconds), () {
@@ -121,8 +124,10 @@ class BashTool extends AgentTool {
       timer.cancel();
       _escalateTimer?.cancel();
       try {
-        await Future.wait([outSub.asFuture(), errSub.asFuture()])
-            .timeout(const Duration(milliseconds: 500));
+        await Future.wait([
+          outSub.asFuture(),
+          errSub.asFuture(),
+        ]).timeout(const Duration(milliseconds: 500));
       } catch (_) {}
       _activeProcess = null;
 
@@ -130,7 +135,8 @@ class BashTool extends AgentTool {
       final err = errBuffer.toString();
 
       if (timedOut) {
-        return '[Command timed out after $timeoutSeconds seconds]\n$out\n$err'.trim();
+        return '[Command timed out after $timeoutSeconds seconds]\n$out\n$err'
+            .trim();
       }
 
       final buffer = StringBuffer();
@@ -144,7 +150,9 @@ class BashTool extends AgentTool {
       }
 
       if (out.isEmpty && err.isEmpty) {
-        buffer.writeln('[Command executed with exit code $exitCode and produced no output]');
+        buffer.writeln(
+          '[Command executed with exit code $exitCode and produced no output]',
+        );
       }
 
       // Truncate if gigantic (e.g. over 100k characters)

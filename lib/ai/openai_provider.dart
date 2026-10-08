@@ -23,13 +23,17 @@ class OpenAiProvider implements LLMProvider {
     required this.model,
     required this.apiKey,
     String? baseUrl,
-  }) : baseUrl = (baseUrl ?? 'https://api.openai.com/v1').replaceAll(RegExp(r'/+$'), '');
+  }) : baseUrl = (baseUrl ?? 'https://api.openai.com/v1').replaceAll(
+         RegExp(r'/+$'),
+         '',
+       );
 
   @override
   Stream<StreamEvent> streamChat({
     required List<ChatMessage> messages,
     required List<AgentTool> tools,
     double? temperature,
+    int? maxTokens,
   }) async* {
     final client = http.Client();
     try {
@@ -38,7 +42,8 @@ class OpenAiProvider implements LLMProvider {
         'model': model,
         'messages': messages.map((m) => m.toOpenAiJson()).toList(),
         'stream': true,
-        if (temperature != null) 'temperature': temperature,
+        'temperature': ?temperature,
+        'max_tokens': ?maxTokens,
       };
 
       if (tools.isNotEmpty) {
@@ -68,8 +73,11 @@ class OpenAiProvider implements LLMProvider {
             break;
           }
 
-          if ((res.statusCode == 429 || res.statusCode >= 500) && attempts < maxAttempts) {
-            final retryAfterSec = int.tryParse(res.headers['retry-after'] ?? '');
+          if ((res.statusCode == 429 || res.statusCode >= 500) &&
+              attempts < maxAttempts) {
+            final retryAfterSec = int.tryParse(
+              res.headers['retry-after'] ?? '',
+            );
             final delayMs = retryAfterSec != null
                 ? retryAfterSec * 1000
                 : (1000 * (1 << (attempts - 1)));
@@ -82,7 +90,9 @@ class OpenAiProvider implements LLMProvider {
           return;
         } catch (e) {
           if (attempts < maxAttempts) {
-            await Future.delayed(Duration(milliseconds: 1000 * (1 << (attempts - 1))));
+            await Future.delayed(
+              Duration(milliseconds: 1000 * (1 << (attempts - 1))),
+            );
             continue;
           }
           yield ErrorEvent('API Connection Error: $e');
@@ -91,7 +101,9 @@ class OpenAiProvider implements LLMProvider {
       }
 
       if (streamedResponse == null) {
-        yield ErrorEvent('Failed to connect to API after $maxAttempts attempts.');
+        yield ErrorEvent(
+          'Failed to connect to API after $maxAttempts attempts.',
+        );
         return;
       }
 
@@ -142,7 +154,8 @@ class OpenAiProvider implements LLMProvider {
         }
 
         final choice = choices[0] as Map<String, dynamic>;
-        if (choice.containsKey('finish_reason') && choice['finish_reason'] != null) {
+        if (choice.containsKey('finish_reason') &&
+            choice['finish_reason'] != null) {
           finishReason = choice['finish_reason'] as String;
         }
 
@@ -152,7 +165,9 @@ class OpenAiProvider implements LLMProvider {
         }
 
         // Reasoning / thought token (e.g., DeepSeek R1, OpenAI o1/o3 reasoning models)
-        final reasoning = delta['reasoning_content'] as String? ?? delta['reasoning'] as String?;
+        final reasoning =
+            delta['reasoning_content'] as String? ??
+            delta['reasoning'] as String?;
         if (reasoning != null && reasoning.isNotEmpty) {
           yield ThoughtDeltaEvent(reasoning);
         }
@@ -172,11 +187,10 @@ class OpenAiProvider implements LLMProvider {
             final id = rawCall['id'] as String?;
             final func = rawCall['function'] as Map<String, dynamic>?;
 
-            final buf = toolCallBuffers.putIfAbsent(index, () => {
-                  'id': id ?? '',
-                  'name': '',
-                  'arguments': StringBuffer(),
-                });
+            final buf = toolCallBuffers.putIfAbsent(
+              index,
+              () => {'id': id ?? '', 'name': '', 'arguments': StringBuffer()},
+            );
 
             if (id != null && id.isNotEmpty) {
               buf['id'] = id;
@@ -196,7 +210,9 @@ class OpenAiProvider implements LLMProvider {
       }
 
       // Emit all completed tool calls
-      for (final entry in toolCallBuffers.entries.toList()..sort((a, b) => a.key.compareTo(b.key))) {
+      for (final entry
+          in toolCallBuffers.entries.toList()
+            ..sort((a, b) => a.key.compareTo(b.key))) {
         final buf = entry.value;
         final id = buf['id'] as String;
         final name = buf['name'] as String;

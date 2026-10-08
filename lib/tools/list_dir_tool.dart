@@ -7,7 +7,7 @@ class ListDirTool extends AgentTool {
   final String workingDirectory;
 
   ListDirTool({String? workingDirectory})
-      : workingDirectory = workingDirectory ?? Directory.current.path;
+    : workingDirectory = workingDirectory ?? Directory.current.path;
 
   @override
   String get name => 'list_dir';
@@ -18,22 +18,25 @@ class ListDirTool extends AgentTool {
 
   @override
   Map<String, dynamic> get parameters => {
-        'type': 'object',
-        'properties': {
-          'path': {
-            'type': 'string',
-            'description': 'Directory path to list (default: current workspace root ".").',
-          },
-          'recursive': {
-            'type': 'boolean',
-            'description': 'Whether to list subdirectories recursively (default: false).',
-          },
-          'max_depth': {
-            'type': 'integer',
-            'description': 'Maximum recursion depth if recursive is true (default: 3).',
-          },
-        },
-      };
+    'type': 'object',
+    'properties': {
+      'path': {
+        'type': 'string',
+        'description':
+            'Directory path to list (default: current workspace root ".").',
+      },
+      'recursive': {
+        'type': 'boolean',
+        'description':
+            'Whether to list subdirectories recursively (default: false).',
+      },
+      'max_depth': {
+        'type': 'integer',
+        'description':
+            'Maximum recursion depth if recursive is true (default: 3).',
+      },
+    },
+  };
 
   @override
   Future<String> execute(Map<String, dynamic> arguments) async {
@@ -41,8 +44,11 @@ class ListDirTool extends AgentTool {
     final recursive = (arguments['recursive'] as bool?) ?? false;
     final maxDepth = (arguments['max_depth'] as num?)?.toInt() ?? 3;
 
-    final targetPath = p.normalize(p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath));
-    if (!p.isWithin(workingDirectory, targetPath) && targetPath != workingDirectory) {
+    final targetPath = p.normalize(
+      p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath),
+    );
+    if (!p.isWithin(workingDirectory, targetPath) &&
+        targetPath != workingDirectory) {
       return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
     }
     final dir = Directory(targetPath);

@@ -10,7 +10,7 @@ class EditFileTool extends AgentTool {
   final String workingDirectory;
 
   EditFileTool({String? workingDirectory})
-      : workingDirectory = workingDirectory ?? Directory.current.path;
+    : workingDirectory = workingDirectory ?? Directory.current.path;
 
   @override
   String get name => 'edit_file';
@@ -21,23 +21,24 @@ class EditFileTool extends AgentTool {
 
   @override
   Map<String, dynamic> get parameters => {
-        'type': 'object',
-        'properties': {
-          'path': {
-            'type': 'string',
-            'description': 'The path of the file to edit (relative or absolute).',
-          },
-          'target_content': {
-            'type': 'string',
-            'description': 'The exact contiguous block of text to be replaced. Must uniquely match in the file.',
-          },
-          'replacement_content': {
-            'type': 'string',
-            'description': 'The new text to replace target_content with.',
-          },
-        },
-        'required': ['path', 'target_content', 'replacement_content'],
-      };
+    'type': 'object',
+    'properties': {
+      'path': {
+        'type': 'string',
+        'description': 'The path of the file to edit (relative or absolute).',
+      },
+      'target_content': {
+        'type': 'string',
+        'description':
+            'The exact contiguous block of text to be replaced. Must uniquely match in the file.',
+      },
+      'replacement_content': {
+        'type': 'string',
+        'description': 'The new text to replace target_content with.',
+      },
+    },
+    'required': ['path', 'target_content', 'replacement_content'],
+  };
 
   @override
   Future<String> execute(Map<String, dynamic> arguments) async {
@@ -55,8 +56,11 @@ class EditFileTool extends AgentTool {
       return 'Error: replacement_content argument is required';
     }
 
-    final fullPath = p.normalize(p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath));
-    if (!p.isWithin(workingDirectory, fullPath) && fullPath != workingDirectory) {
+    final fullPath = p.normalize(
+      p.isAbsolute(rawPath) ? rawPath : p.join(workingDirectory, rawPath),
+    );
+    if (!p.isWithin(workingDirectory, fullPath) &&
+        fullPath != workingDirectory) {
       return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
     }
     final file = File(fullPath);
@@ -78,7 +82,11 @@ class EditFileTool extends AgentTool {
       }
 
       final index = text.indexOf(targetContent);
-      final newText = text.replaceRange(index, index + targetContent.length, replacementContent);
+      final newText = text.replaceRange(
+        index,
+        index + targetContent.length,
+        replacementContent,
+      );
 
       final approved = await ApprovalManager.instance.confirmFileEdit(
         path: rawPath,

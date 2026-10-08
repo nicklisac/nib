@@ -98,7 +98,11 @@ class SlashCommandHandler {
 
       case '/mock':
         agent.provider = MockProvider();
-        stdout.writeln(Ansi.yellowText('  ✔ Switched to offline MockProvider (no API key required).'));
+        stdout.writeln(
+          Ansi.yellowText(
+            '  ✔ Switched to offline MockProvider (no API key required).',
+          ),
+        );
         return true;
 
       case '/exit':
@@ -108,7 +112,11 @@ class SlashCommandHandler {
         TerminalManager.instance.shutdown(0);
 
       default:
-        stdout.writeln(Ansi.yellowText('  Unknown command "$cmd". Type /help for available commands.'));
+        stdout.writeln(
+          Ansi.yellowText(
+            '  Unknown command "$cmd". Type /help for available commands.',
+          ),
+        );
         return true;
     }
   }
@@ -116,22 +124,54 @@ class SlashCommandHandler {
   void _showHelp() {
     stdout.writeln();
     stdout.writeln(Ansi.boldText('Available Slash Commands:'));
-    stdout.writeln('  ${Ansi.cyanText('/help')}             Show this help message');
-    stdout.writeln('  ${Ansi.cyanText('/undo')}             Revert the last file change made by Nib');
-    stdout.writeln('  ${Ansi.cyanText('/compact [focus]')}  Compact older conversation entries into structured checkpoint');
-    stdout.writeln('  ${Ansi.cyanText('/theme [name]')}     Switch TrueColor theme (catppuccin, tokyonight, nord, gruvbox)');
-    stdout.writeln('  ${Ansi.cyanText('/confirm')}          Toggle interactive change confirmation mode');
-    stdout.writeln('  ${Ansi.cyanText('/sessions')}         List saved sessions');
-    stdout.writeln('  ${Ansi.cyanText('/resume [id]')}      Resume a session (interactive picker if no id given)');
-    stdout.writeln('  ${Ansi.cyanText('/skills [cmd]')}     Inspect and toggle modular agent skills (list, show, toggle, reload)');
-    stdout.writeln('  ${Ansi.cyanText('/config')}           Display active configuration & endpoints');
-    stdout.writeln('  ${Ansi.cyanText('/provider [name]')}  Switch between configured providers');
-    stdout.writeln('  ${Ansi.cyanText('/model [name]')}     Display or switch the current model');
-    stdout.writeln('  ${Ansi.cyanText('/tools')}            List all registered agent tools');
-    stdout.writeln('  ${Ansi.cyanText('/history')}          Display conversation stats & token usage');
-    stdout.writeln('  ${Ansi.cyanText('/system [prompt]')}  Display or update the system prompt');
-    stdout.writeln('  ${Ansi.cyanText('/clear')}            Clear conversation history');
-    stdout.writeln('  ${Ansi.cyanText('/mock')}             Switch to offline MockProvider');
+    stdout.writeln(
+      '  ${Ansi.cyanText('/help')}             Show this help message',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/undo')}             Revert the last file change made by Nib',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/compact [focus]')}  Compact older conversation entries into structured checkpoint',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/theme [name]')}     Switch TrueColor theme (catppuccin, tokyonight, nord, gruvbox)',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/confirm')}          Toggle interactive change confirmation mode',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/sessions')}         List saved sessions',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/resume [id]')}      Resume a session (interactive picker if no id given)',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/skills [cmd]')}     Inspect and toggle modular agent skills (list, show, toggle, reload)',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/config')}           Display active configuration & endpoints',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/provider [name]')}  Switch between configured providers',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/model [name]')}     Display or switch the current model',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/tools')}            List all registered agent tools',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/history')}          Display conversation stats & token usage',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/system [prompt]')}  Display or update the system prompt',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/clear')}            Clear conversation history',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/mock')}             Switch to offline MockProvider',
+    );
     stdout.writeln('  ${Ansi.cyanText('/exit')}             Exit the CLI');
     stdout.writeln();
   }
@@ -163,7 +203,9 @@ class SlashCommandHandler {
         final preview = s['last_prompt'] as String;
         final isCurrent = id == agent.session.id;
         final marker = isCurrent ? Ansi.greenText(' (current)') : '';
-        stdout.writeln('  • ${Ansi.cyanText(id)}$marker ${Ansi.dimText('[$turns turns]')} ${Ansi.grayText(preview)}');
+        stdout.writeln(
+          '  • ${Ansi.cyanText(id)}$marker ${Ansi.dimText('[$turns turns]')} ${Ansi.grayText(preview)}',
+        );
       }
     }
     stdout.writeln();
@@ -185,7 +227,11 @@ class SlashCommandHandler {
     }
 
     agent.session = loaded;
-    stdout.writeln(NibTheme.current.success.text('  ✔ Resumed session "$id" (${loaded.messages.length} messages loaded).'));
+    stdout.writeln(
+      NibTheme.current.success.text(
+        '  ✔ Resumed session "$id" (${loaded.messages.length} messages loaded).',
+      ),
+    );
   }
 
   Future<void> _handleSkills(List<String> args) async {
@@ -197,9 +243,15 @@ class SlashCommandHandler {
       case 'list':
         final all = SkillsManager.instance.skills;
         stdout.writeln();
-        stdout.writeln(Ansi.boldText('Registered Agent Skills (${all.where((s) => s.isEnabled).length}/${all.length} active):'));
+        stdout.writeln(
+          Ansi.boldText(
+            'Registered Agent Skills (${all.where((s) => s.isEnabled).length}/${all.length} active):',
+          ),
+        );
         if (all.isEmpty) {
-          stdout.writeln('  ${theme.muted.text('No skills discovered in .nib/skills, ~/.nib/skills, or ~/.tau/skills.')}');
+          stdout.writeln(
+            '  ${theme.muted.text('No skills discovered in .nib/skills, ~/.nib/skills, or ~/.tau/skills.')}',
+          );
         } else {
           for (final s in all) {
             final statusBadge = s.isEnabled
@@ -208,10 +260,14 @@ class SlashCommandHandler {
             final scopeBadge = s.isWorkspace
                 ? theme.warning.text('[workspace]')
                 : theme.secondary.text('[global]   ');
-            stdout.writeln('  $statusBadge $scopeBadge ${theme.accent.text(s.name.padRight(16))} ${theme.muted.text(s.description)}');
+            stdout.writeln(
+              '  $statusBadge $scopeBadge ${theme.accent.text(s.name.padRight(16))} ${theme.muted.text(s.description)}',
+            );
           }
         }
-        stdout.writeln('\n  ${theme.muted.text('Commands: /skills toggle <name> | /skills show <name> | /skills reload')}');
+        stdout.writeln(
+          '\n  ${theme.muted.text('Commands: /skills toggle <name> | /skills show <name> | /skills reload')}',
+        );
         stdout.writeln();
         break;
 
@@ -227,10 +283,18 @@ class SlashCommandHandler {
           return;
         }
         stdout.writeln();
-        stdout.writeln('  ${theme.muted.text('╭─')} ${theme.accent.text('Skill: ${skill.name}')} ${theme.muted.text('────────────────────────────────────╮')}');
-        stdout.writeln('  ${theme.muted.text('│')} Location: ${theme.muted.text(skill.filePath)}');
-        stdout.writeln('  ${theme.muted.text('│')} Status:   ${skill.isEnabled ? theme.success.text('Active') : theme.muted.text('Disabled')}');
-        stdout.writeln('  ${theme.muted.text('╰───────────────────────────────────────────────────╯')}');
+        stdout.writeln(
+          '  ${theme.muted.text('╭─')} ${theme.accent.text('Skill: ${skill.name}')} ${theme.muted.text('────────────────────────────────────╮')}',
+        );
+        stdout.writeln(
+          '  ${theme.muted.text('│')} Location: ${theme.muted.text(skill.filePath)}',
+        );
+        stdout.writeln(
+          '  ${theme.muted.text('│')} Status:   ${skill.isEnabled ? theme.success.text('Active') : theme.muted.text('Disabled')}',
+        );
+        stdout.writeln(
+          '  ${theme.muted.text('╰───────────────────────────────────────────────────╯')}',
+        );
         stdout.writeln(MarkdownRenderer.render(skill.content, theme));
         stdout.writeln();
         break;
@@ -246,9 +310,15 @@ class SlashCommandHandler {
           return;
         }
         skill.isEnabled = !skill.isEnabled;
-        agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
-        final stateStr = skill.isEnabled ? theme.success.text('ENABLED') : theme.muted.text('DISABLED');
-        stdout.writeln('  ✔ Skill ${theme.accent.text(skill.name)} is now $stateStr.');
+        agent.session.rebuildSystemPrompt(
+          appendPrompt: config?.systemPromptAppend,
+        );
+        final stateStr = skill.isEnabled
+            ? theme.success.text('ENABLED')
+            : theme.muted.text('DISABLED');
+        stdout.writeln(
+          '  ✔ Skill ${theme.accent.text(skill.name)} is now $stateStr.',
+        );
         break;
 
       case 'enable':
@@ -262,8 +332,12 @@ class SlashCommandHandler {
           return;
         }
         skill.isEnabled = true;
-        agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
-        stdout.writeln('  ✔ Skill ${theme.accent.text(skill.name)} ${theme.success.text('ENABLED')}.');
+        agent.session.rebuildSystemPrompt(
+          appendPrompt: config?.systemPromptAppend,
+        );
+        stdout.writeln(
+          '  ✔ Skill ${theme.accent.text(skill.name)} ${theme.success.text('ENABLED')}.',
+        );
         break;
 
       case 'disable':
@@ -277,17 +351,33 @@ class SlashCommandHandler {
           return;
         }
         skill.isEnabled = false;
-        agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
-        stdout.writeln('  ✔ Skill ${theme.accent.text(skill.name)} ${theme.muted.text('DISABLED')}.');
+        agent.session.rebuildSystemPrompt(
+          appendPrompt: config?.systemPromptAppend,
+        );
+        stdout.writeln(
+          '  ✔ Skill ${theme.accent.text(skill.name)} ${theme.muted.text('DISABLED')}.',
+        );
         break;
 
       case 'reload':
-        stdout.writeln(theme.muted.text('  Reloading skills from workspace and user directories...'));
-        await SkillsManager.instance.loadSkills(workspacePath: Directory.current.path);
-        agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
+        stdout.writeln(
+          theme.muted.text(
+            '  Reloading skills from workspace and user directories...',
+          ),
+        );
+        await SkillsManager.instance.loadSkills(
+          workspacePath: Directory.current.path,
+        );
+        agent.session.rebuildSystemPrompt(
+          appendPrompt: config?.systemPromptAppend,
+        );
         final count = SkillsManager.instance.skills.length;
         final activeCount = SkillsManager.instance.activeSkills.length;
-        stdout.writeln(theme.success.text('  ✔ Loaded $count skills ($activeCount active). System prompt updated.'));
+        stdout.writeln(
+          theme.success.text(
+            '  ✔ Loaded $count skills ($activeCount active). System prompt updated.',
+          ),
+        );
         break;
 
       default:
@@ -295,11 +385,21 @@ class SlashCommandHandler {
         final skill = SkillsManager.instance.findSkill(sub);
         if (skill != null) {
           skill.isEnabled = !skill.isEnabled;
-          agent.session.rebuildSystemPrompt(appendPrompt: config?.systemPromptAppend);
-          final stateStr = skill.isEnabled ? theme.success.text('ENABLED') : theme.muted.text('DISABLED');
-          stdout.writeln('  ✔ Skill ${theme.accent.text(skill.name)} is now $stateStr.');
+          agent.session.rebuildSystemPrompt(
+            appendPrompt: config?.systemPromptAppend,
+          );
+          final stateStr = skill.isEnabled
+              ? theme.success.text('ENABLED')
+              : theme.muted.text('DISABLED');
+          stdout.writeln(
+            '  ✔ Skill ${theme.accent.text(skill.name)} is now $stateStr.',
+          );
         } else {
-          stdout.writeln(theme.warning.text('  Unknown skill command "$sub". Usage: /skills [list|show|toggle|reload] [name]'));
+          stdout.writeln(
+            theme.warning.text(
+              '  Unknown skill command "$sub". Usage: /skills [list|show|toggle|reload] [name]',
+            ),
+          );
         }
         break;
     }
@@ -309,7 +409,9 @@ class SlashCommandHandler {
     stdout.writeln();
     stdout.writeln(Ansi.boldText('Nib Configuration:'));
     stdout.writeln('  Active Provider:  ${Ansi.cyanText(agent.provider.name)}');
-    stdout.writeln('  Active Model:     ${Ansi.brightCyanText(agent.provider.model)}');
+    stdout.writeln(
+      '  Active Model:     ${Ansi.brightCyanText(agent.provider.model)}',
+    );
     if (agent.provider is OpenAiProvider) {
       final oai = agent.provider as OpenAiProvider;
       stdout.writeln('  Endpoint:         ${Ansi.grayText(oai.baseUrl)}');
@@ -317,8 +419,12 @@ class SlashCommandHandler {
     if (config != null && config!.providers.isNotEmpty) {
       stdout.writeln('\n${Ansi.boldText('Configured Providers:')}');
       for (final p in config!.providers.values) {
-        final marker = p.name == agent.provider.name ? Ansi.greenText(' (active)') : '';
-        stdout.writeln('  • ${Ansi.yellowText(p.name)}: model=${p.model}, endpoint=${p.baseUrl}$marker');
+        final marker = p.name == agent.provider.name
+            ? Ansi.greenText(' (active)')
+            : '';
+        stdout.writeln(
+          '  • ${Ansi.yellowText(p.name)}: model=${p.model}, endpoint=${p.baseUrl}$marker',
+        );
       }
     }
     stdout.writeln();
@@ -338,9 +444,17 @@ class SlashCommandHandler {
         baseUrl: p.baseUrl,
         apiKey: p.apiKey,
       );
-      stdout.writeln(Ansi.greenText('  ✔ Switched to provider "$name" (${p.model} @ ${p.baseUrl})'));
+      stdout.writeln(
+        Ansi.greenText(
+          '  ✔ Switched to provider "$name" (${p.model} @ ${p.baseUrl})',
+        ),
+      );
     } else {
-      stdout.writeln(Ansi.yellowText('  Provider "$name" not found in config. Available: ${config?.providers.keys.join(', ') ?? 'none'}'));
+      stdout.writeln(
+        Ansi.yellowText(
+          '  Provider "$name" not found in config. Available: ${config?.providers.keys.join(', ') ?? 'none'}',
+        ),
+      );
     }
   }
 
@@ -350,10 +464,14 @@ class SlashCommandHandler {
     stdout.writeln(Ansi.boldText('Session Transcript Summary:'));
     stdout.writeln('  Session ID:         ${Ansi.cyanText(agent.session.id)}');
     stdout.writeln('  Total messages:     ${msgs.length}');
-    stdout.writeln('  Tool executions:    ${agent.session.toolExecutionsCount}');
+    stdout.writeln(
+      '  Tool executions:    ${agent.session.toolExecutionsCount}',
+    );
     stdout.writeln('  Undo history depth: ${UndoManager.instance.count}');
     stdout.writeln('  Prompt tokens:      ${agent.session.totalPromptTokens}');
-    stdout.writeln('  Completion tokens:  ${agent.session.totalCompletionTokens}');
+    stdout.writeln(
+      '  Completion tokens:  ${agent.session.totalCompletionTokens}',
+    );
     stdout.writeln();
   }
 
@@ -361,14 +479,18 @@ class SlashCommandHandler {
     stdout.writeln();
     stdout.writeln(Ansi.boldText('Registered Agent Tools:'));
     for (final tool in agent.tools) {
-      stdout.writeln('  ${Ansi.brightCyanText(tool.name)}: ${tool.description}');
+      stdout.writeln(
+        '  ${Ansi.brightCyanText(tool.name)}: ${tool.description}',
+      );
     }
     stdout.writeln();
   }
 
   void _handleModel(List<String> args) {
     if (args.isEmpty) {
-      stdout.writeln('  Current model: ${Ansi.cyanText(agent.provider.model)} (provider: ${agent.provider.name})');
+      stdout.writeln(
+        '  Current model: ${Ansi.cyanText(agent.provider.model)} (provider: ${agent.provider.name})',
+      );
       return;
     }
 
@@ -383,7 +505,11 @@ class SlashCommandHandler {
       );
       stdout.writeln(Ansi.greenText('  ✔ Model changed to $newModel'));
     } else {
-      stdout.writeln(Ansi.yellowText('  Model switching currently supports OpenAI-compatible providers.'));
+      stdout.writeln(
+        Ansi.yellowText(
+          '  Model switching currently supports OpenAI-compatible providers.',
+        ),
+      );
     }
   }
 
@@ -408,7 +534,9 @@ class SlashCommandHandler {
       for (final t in NibTheme.allThemes.values) {
         final isActive = t.id == NibTheme.current.id;
         final marker = isActive ? ' (active)' : '';
-        stdout.writeln('  • ${t.accent.text(t.id.padRight(12))} - ${t.secondary.text(t.displayName)}$marker');
+        stdout.writeln(
+          '  • ${t.accent.text(t.id.padRight(12))} - ${t.secondary.text(t.displayName)}$marker',
+        );
       }
       stdout.writeln('\n  Usage: /theme <name> (e.g. /theme tokyonight)');
       stdout.writeln();
@@ -419,9 +547,15 @@ class SlashCommandHandler {
     if (NibTheme.allThemes.containsKey(target)) {
       NibTheme.setTheme(target);
       final active = NibTheme.current;
-      stdout.writeln(active.success.text('  ✔ Switched theme to ${active.displayName}'));
+      stdout.writeln(
+        active.success.text('  ✔ Switched theme to ${active.displayName}'),
+      );
     } else {
-      stdout.writeln(Ansi.yellowText('  Unknown theme "$target". Available: ${NibTheme.allThemes.keys.join(', ')}'));
+      stdout.writeln(
+        Ansi.yellowText(
+          '  Unknown theme "$target". Available: ${NibTheme.allThemes.keys.join(', ')}',
+        ),
+      );
     }
   }
 
@@ -431,29 +565,45 @@ class SlashCommandHandler {
     final newState = ApprovalManager.instance.requireConfirmation;
     final theme = NibTheme.current;
     if (newState) {
-      stdout.writeln(theme.warning.text('  ✔ Interactive confirmation ENABLED (Nib will prompt before modifying files or running destructive commands)'));
+      stdout.writeln(
+        theme.warning.text(
+          '  ✔ Interactive confirmation ENABLED (Nib will prompt before modifying files or running destructive commands)',
+        ),
+      );
     } else {
-      stdout.writeln(theme.muted.text('  ✔ Interactive confirmation DISABLED (Auto-apply mode)'));
+      stdout.writeln(
+        theme.muted.text(
+          '  ✔ Interactive confirmation DISABLED (Auto-apply mode)',
+        ),
+      );
     }
   }
 
   Future<void> _handleCompact(List<String> args) async {
     final focus = args.isNotEmpty ? args.join(' ') : null;
-    stdout.writeln(NibTheme.current.muted.text('  Compacting conversation context (Tau-style)...'));
+    stdout.writeln(
+      NibTheme.current.muted.text(
+        '  Compacting conversation context (Tau-style)...',
+      ),
+    );
     final result = await CompactionManager.compact(
       session: agent.session,
       provider: agent.provider,
       customInstructions: focus,
     );
     if (result.success) {
-      stdout.writeln(NibTheme.current.success.text(
-        '  ✔ Compacted ${result.replacedMessageCount} messages '
-        '(${result.tokensBefore} → ${result.tokensAfter} tokens).',
-      ));
+      stdout.writeln(
+        NibTheme.current.success.text(
+          '  ✔ Compacted ${result.replacedMessageCount} messages '
+          '(${result.tokensBefore} → ${result.tokensAfter} tokens).',
+        ),
+      );
     } else {
-      stdout.writeln(NibTheme.current.warning.text(
-        '  Not enough messages in context to compact (needs at least ${CompactionManager.defaultKeepRecentMessages + 1} messages).',
-      ));
+      stdout.writeln(
+        NibTheme.current.warning.text(
+          '  Not enough messages in context to compact (needs at least ${CompactionManager.defaultKeepRecentMessages + 1} messages).',
+        ),
+      );
     }
   }
 }

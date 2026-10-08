@@ -1,12 +1,7 @@
 import 'dart:convert';
 
 /// Represents a role in the conversation.
-enum Role {
-  system,
-  user,
-  assistant,
-  tool,
-}
+enum Role { system, user, assistant, tool }
 
 /// A tool call requested by the model.
 class ToolCall {
@@ -14,20 +9,13 @@ class ToolCall {
   final String name;
   final Map<String, dynamic> arguments;
 
-  ToolCall({
-    required this.id,
-    required this.name,
-    required this.arguments,
-  });
+  ToolCall({required this.id, required this.name, required this.arguments});
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'type': 'function',
-        'function': {
-          'name': name,
-          'arguments': jsonEncode(arguments),
-        },
-      };
+    'id': id,
+    'type': 'function',
+    'function': {'name': name, 'arguments': jsonEncode(arguments)},
+  };
 
   factory ToolCall.fromJson(Map<String, dynamic> json) {
     final func = json['function'] as Map<String, dynamic>? ?? {};
@@ -44,7 +32,9 @@ class ToolCall {
     }
 
     return ToolCall(
-      id: json['id'] as String? ?? 'call_${DateTime.now().millisecondsSinceEpoch}',
+      id:
+          json['id'] as String? ??
+          'call_${DateTime.now().millisecondsSinceEpoch}',
       name: func['name'] as String? ?? json['name'] as String? ?? '',
       arguments: args,
     );
@@ -80,21 +70,20 @@ class ChatMessage {
     required String toolCallId,
     required String toolName,
     required String content,
-  }) =>
-      ChatMessage(
-        role: Role.tool,
-        toolCallId: toolCallId,
-        toolName: toolName,
-        content: content,
-      );
+  }) => ChatMessage(
+    role: Role.tool,
+    toolCallId: toolCallId,
+    toolName: toolName,
+    content: content,
+  );
 
   Map<String, dynamic> toJson() => {
-        'role': role.name,
-        'content': content,
-        'tool_calls': toolCalls?.map((t) => t.toJson()).toList(),
-        'tool_call_id': toolCallId,
-        'tool_name': toolName,
-      };
+    'role': role.name,
+    'content': content,
+    'tool_calls': toolCalls?.map((t) => t.toJson()).toList(),
+    'tool_call_id': toolCallId,
+    'tool_name': toolName,
+  };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final roleStr = json['role'] as String? ?? 'user';
@@ -127,9 +116,7 @@ class ChatMessage {
       case Role.user:
         return {'role': 'user', 'content': content ?? ''};
       case Role.assistant:
-        final map = <String, dynamic>{
-          'role': 'assistant',
-        };
+        final map = <String, dynamic>{'role': 'assistant'};
         if (content != null && content!.isNotEmpty) {
           map['content'] = content;
         }

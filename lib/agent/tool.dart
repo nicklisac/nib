@@ -20,18 +20,18 @@ abstract class AgentTool {
 
   /// Converts the tool definition into standard OpenAI tool specification.
   Map<String, dynamic> toOpenAiSchema() => {
-        'type': 'function',
-        'function': {
-          'name': name,
-          'description': description,
-          'parameters': parameters,
-        },
-      };
+    'type': 'function',
+    'function': {
+      'name': name,
+      'description': description,
+      'parameters': parameters,
+    },
+  };
 
   /// Converts the tool definition into Anthropic tool specification.
   Map<String, dynamic> toAnthropicSchema() => {
-        'name': name,
-        'description': description,
-        'input_schema': parameters,
-      };
+    'name': name,
+    'description': description,
+    'input_schema': parameters,
+  };
 }

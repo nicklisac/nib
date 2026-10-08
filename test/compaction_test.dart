@@ -15,37 +15,43 @@ void main() {
       expect(tokens, greaterThan(10));
     });
 
-    test('compact preserves recent messages and inserts structured summary prefix', () async {
-      final session = AgentSession();
-      // Add 10 messages
-      for (int i = 1; i <= 10; i++) {
-        session.addMessage(ChatMessage.user('User question $i'));
-        session.addMessage(ChatMessage.assistant('Assistant answer $i'));
-      }
+    test(
+      'compact preserves recent messages and inserts structured summary prefix',
+      () async {
+        final session = AgentSession();
+        // Add 10 messages
+        for (int i = 1; i <= 10; i++) {
+          session.addMessage(ChatMessage.user('User question $i'));
+          session.addMessage(ChatMessage.assistant('Assistant answer $i'));
+        }
 
-      expect(session.messages.length, equals(20));
+        expect(session.messages.length, equals(20));
 
-      final mockProvider = MockProvider();
-      final result = await CompactionManager.compact(
-        session: session,
-        provider: mockProvider,
-        keepRecentCount: 4,
-      );
+        final mockProvider = MockProvider();
+        final result = await CompactionManager.compact(
+          session: session,
+          provider: mockProvider,
+          keepRecentCount: 4,
+        );
 
-      expect(result.success, isTrue);
-      expect(result.replacedMessageCount, equals(16));
-      // Resulting messages: 1 summary message + 4 kept recent messages = 5
-      expect(session.messages.length, equals(5));
+        expect(result.success, isTrue);
+        expect(result.replacedMessageCount, equals(16));
+        // Resulting messages: 1 summary message + 4 kept recent messages = 5
+        expect(session.messages.length, equals(5));
 
-      final firstMsg = session.messages.first;
-      expect(firstMsg.role, equals(Role.user));
-      expect(firstMsg.content, startsWith(CompactionManager.compactionSummaryPrefix));
-      expect(firstMsg.content, contains('## Goal'));
-      expect(firstMsg.content, contains('## Progress'));
+        final firstMsg = session.messages.first;
+        expect(firstMsg.role, equals(Role.user));
+        expect(
+          firstMsg.content,
+          startsWith(CompactionManager.compactionSummaryPrefix),
+        );
+        expect(firstMsg.content, contains('## Goal'));
+        expect(firstMsg.content, contains('## Progress'));
 
-      // The last kept message should be the 10th assistant answer
-      expect(session.messages.last.content, equals('Assistant answer 10'));
-    });
+        // The last kept message should be the 10th assistant answer
+        expect(session.messages.last.content, equals('Assistant answer 10'));
+      },
+    );
 
     test('shouldAutoCompact respects custom context window limits', () {
       final session = AgentSession();
@@ -57,7 +63,14 @@ void main() {
       expect(CompactionManager.shouldAutoCompact(session), isFalse);
 
       // With custom 2500 token window and 500 reserve, should compact
-      expect(CompactionManager.shouldAutoCompact(session, contextWindow: 2500, reserve: 500), isTrue);
+      expect(
+        CompactionManager.shouldAutoCompact(
+          session,
+          contextWindow: 2500,
+          reserve: 500,
+        ),
+        isTrue,
+      );
     });
   });
 }

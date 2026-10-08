@@ -63,7 +63,10 @@ Always prefer records and pattern matching where clean.
 
       final dartSkill = manager.findSkill('dart-pro');
       expect(dartSkill, isNotNull);
-      expect(dartSkill!.description, contains('Best practices for modern Dart'));
+      expect(
+        dartSkill!.description,
+        contains('Best practices for modern Dart'),
+      );
       expect(dartSkill.content, contains('pattern matching'));
     });
 
@@ -89,18 +92,21 @@ Always prefer records and pattern matching where clean.
       expect(manager.findSkill('Git Master')!.isEnabled, isTrue);
     });
 
-    test('AgentSession rebuildSystemPrompt dynamically injects active skills', () async {
-      final manager = SkillsManager.instance;
-      await manager.loadSkills(workspacePath: tempDir.path);
+    test(
+      'AgentSession rebuildSystemPrompt dynamically injects active skills',
+      () async {
+        final manager = SkillsManager.instance;
+        await manager.loadSkills(workspacePath: tempDir.path);
 
-      final session = AgentSession();
-      session.rebuildSystemPrompt(appendPrompt: 'Custom instructions');
+        final session = AgentSession();
+        session.rebuildSystemPrompt(appendPrompt: 'Custom instructions');
 
-      expect(session.systemPrompt, contains('# Active Agent Skills'));
-      expect(session.systemPrompt, contains('## Skill: Git Master'));
-      expect(session.systemPrompt, contains('Custom instructions'));
-      expect(session.messages.first.content, equals(session.systemPrompt));
-    });
+        expect(session.systemPrompt, contains('# Active Agent Skills'));
+        expect(session.systemPrompt, contains('## Skill: Git Master'));
+        expect(session.systemPrompt, contains('Custom instructions'));
+        expect(session.messages.first.content, equals(session.systemPrompt));
+      },
+    );
 
     test('AutoCompleter finds slash commands and metadata', () {
       final matches = AutoCompleter.completeSlashInfo('/sk');

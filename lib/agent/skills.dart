@@ -21,7 +21,8 @@ class Skill {
   });
 
   @override
-  String toString() => '$name: $description (${isEnabled ? "active" : "disabled"})';
+  String toString() =>
+      '$name: $description (${isEnabled ? "active" : "disabled"})';
 }
 
 /// Discovers, loads, toggles, and formats modular skills from workspace and user directories.
@@ -110,7 +111,8 @@ class SkillsManager {
                 name = parsedYaml['name']?.toString() ?? name;
               }
               if (parsedYaml.containsKey('description')) {
-                description = parsedYaml['description']?.toString() ?? description;
+                description =
+                    parsedYaml['description']?.toString() ?? description;
               }
             }
           } catch (_) {}
@@ -144,14 +146,6 @@ class SkillsManager {
     } catch (_) {
       return null;
     }
-  }
-
-  String _stripQuotes(String val) {
-    if ((val.startsWith('"') && val.endsWith('"')) ||
-        (val.startsWith("'") && val.endsWith("'"))) {
-      return val.substring(1, val.length - 1);
-    }
-    return val;
   }
 
   Skill? findSkill(String name) {
@@ -188,8 +182,12 @@ class SkillsManager {
 
     final buffer = StringBuffer();
     buffer.writeln('\n\n# Active Agent Skills');
-    buffer.writeln('You have access to the following specialized capabilities and workflows.');
-    buffer.writeln('Consult and follow these guidelines when executing relevant tasks:\n');
+    buffer.writeln(
+      'You have access to the following specialized capabilities and workflows.',
+    );
+    buffer.writeln(
+      'Consult and follow these guidelines when executing relevant tasks:\n',
+    );
 
     for (final skill in active) {
       buffer.writeln('## Skill: ${skill.name}');

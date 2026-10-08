@@ -22,21 +22,29 @@ class AnthropicProvider implements LLMProvider {
     required this.model,
     required this.apiKey,
     String? baseUrl,
-  }) : baseUrl = (baseUrl ?? 'https://api.anthropic.com/v1').replaceAll(RegExp(r'/+$'), '');
+  }) : baseUrl = (baseUrl ?? 'https://api.anthropic.com/v1').replaceAll(
+         RegExp(r'/+$'),
+         '',
+       );
 
   @override
   Stream<StreamEvent> streamChat({
     required List<ChatMessage> messages,
     required List<AgentTool> tools,
     double? temperature,
+    int? maxTokens,
   }) async* {
     final client = http.Client();
     try {
       final uri = Uri.parse('$baseUrl/messages');
 
       // Extract system messages for Anthropic top-level system parameter
-      final systemMessages = messages.where((m) => m.role == Role.system).toList();
-      final systemPrompt = systemMessages.map((m) => m.content ?? '').join('\n\n');
+      final systemMessages = messages
+          .where((m) => m.role == Role.system)
+          .toList();
+      final systemPrompt = systemMessages
+          .map((m) => m.content ?? '')
+          .join('\n\n');
 
       final conversationMessages = <Map<String, dynamic>>[];
       for (final msg in messages) {
@@ -47,7 +55,8 @@ class AnthropicProvider implements LLMProvider {
               conversationMessages.last['role'] == 'user') {
             final prev = conversationMessages.last['content'];
             if (prev is String) {
-              conversationMessages.last['content'] = '$prev\n\n${msg.content ?? ''}';
+              conversationMessages.last['content'] =
+                  '$prev\n\n${msg.content ?? ''}';
             } else if (prev is List) {
               prev.add({'type': 'text', 'text': msg.content ?? ''});
             }
@@ -98,10 +107,10 @@ class AnthropicProvider implements LLMProvider {
       final requestBody = <String, dynamic>{
         'model': model,
         'messages': conversationMessages,
-        'max_tokens': 4096,
+        'max_tokens': maxTokens ?? 4096,
         'stream': true,
         if (systemPrompt.isNotEmpty) 'system': systemPrompt,
-        if (temperature != null) 'temperature': temperature,
+        'temperature': ?temperature,
       };
 
       if (tools.isNotEmpty) {
@@ -128,8 +137,11 @@ class AnthropicProvider implements LLMProvider {
             break;
           }
 
-          if ((res.statusCode == 429 || res.statusCode >= 500) && attempts < maxAttempts) {
-            final retryAfterSec = int.tryParse(res.headers['retry-after'] ?? '');
+          if ((res.statusCode == 429 || res.statusCode >= 500) &&
+              attempts < maxAttempts) {
+            final retryAfterSec = int.tryParse(
+              res.headers['retry-after'] ?? '',
+            );
             final delayMs = retryAfterSec != null
                 ? retryAfterSec * 1000
                 : (1000 * (1 << (attempts - 1)));
@@ -142,7 +154,9 @@ class AnthropicProvider implements LLMProvider {
           return;
         } catch (e) {
           if (attempts < maxAttempts) {
-            await Future.delayed(Duration(milliseconds: 1000 * (1 << (attempts - 1))));
+            await Future.delayed(
+              Duration(milliseconds: 1000 * (1 << (attempts - 1))),
+            );
             continue;
           }
           yield ErrorEvent('Anthropic API Connection Error: $e');
@@ -151,7 +165,9 @@ class AnthropicProvider implements LLMProvider {
       }
 
       if (streamedResponse == null) {
-        yield ErrorEvent('Failed to connect to Anthropic API after $maxAttempts attempts.');
+        yield ErrorEvent(
+          'Failed to connect to Anthropic API after $maxAttempts attempts.',
+        );
         return;
       }
 

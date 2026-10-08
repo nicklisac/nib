@@ -29,7 +29,11 @@ List<String> generateUnifiedDiff(List<String> oldLines, List<String> newLines) {
   if (oldLines.isEmpty) return newLines.map((l) => '+ $l').toList();
   if (newLines.isEmpty) return oldLines.map((l) => '- $l').toList();
 
-  final result = diffutil.calculateListDiff(oldLines, newLines, detectMoves: false);
+  final result = diffutil.calculateListDiff(
+    oldLines,
+    newLines,
+    detectMoves: false,
+  );
   final updates = result.getUpdatesWithData().toList();
 
   final removedOldIndices = <int>{};
@@ -52,14 +56,16 @@ List<String> generateUnifiedDiff(List<String> oldLines, List<String> newLines) {
 
   while (oldIdx < oldLines.length || newIdx < newLines.length) {
     // 1. If old line is a deletion, output deletion
-    if (oldIdx < oldLines.length && (removedOldIndices.contains(oldIdx) || newIdx >= newLines.length)) {
+    if (oldIdx < oldLines.length &&
+        (removedOldIndices.contains(oldIdx) || newIdx >= newLines.length)) {
       output.add('- ${oldLines[oldIdx]}');
       oldIdx++;
       continue;
     }
 
     // 2. If new line is an insertion, output addition
-    if (newIdx < newLines.length && (insertedNewIndices.containsKey(newIdx) || oldIdx >= oldLines.length)) {
+    if (newIdx < newLines.length &&
+        (insertedNewIndices.containsKey(newIdx) || oldIdx >= oldLines.length)) {
       output.add('+ ${newLines[newIdx]}');
       newIdx++;
       continue;

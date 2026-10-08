@@ -11,7 +11,8 @@ class AgentCallbacks {
   final void Function(String text)? onTextDelta;
   final void Function(String thought)? onThoughtDelta;
   final void Function(ToolCall toolCall)? onToolCallStarted;
-  final void Function(ToolCall toolCall, String result, Duration duration)? onToolCallFinished;
+  final void Function(ToolCall toolCall, String result, Duration duration)?
+  onToolCallFinished;
   final void Function(ToolCall toolCall, String line)? onToolProgress;
   final void Function(String error)? onError;
 
@@ -32,6 +33,7 @@ class Agent {
   final Map<String, AgentTool> _tools = {};
   final int maxTurns;
   final int? contextWindow;
+  final int? maxTokens;
 
   Agent({
     required this.provider,
@@ -39,6 +41,7 @@ class Agent {
     List<AgentTool> tools = const [],
     this.maxTurns = 20,
     this.contextWindow,
+    this.maxTokens,
   }) {
     for (final t in tools) {
       registerTool(t);
@@ -69,26 +72,33 @@ class Agent {
   }
 
   /// Runs the full agent loop for the provided user message.
-  Future<void> runTurn(
-    String userPrompt, {
-    AgentCallbacks? callbacks,
-  }) async {
+  Future<void> runTurn(String userPrompt, {AgentCallbacks? callbacks}) async {
     _isCancelled = false;
     session.addSystemPromptIfNeeded();
     session.addMessage(ChatMessage.user(userPrompt));
 
-    // Auto-compact history if threshold is reached (Tau-style context window management)
-    final effectiveContext = contextWindow ?? CompactionManager.defaultContextWindowTokens;
-    final reserveTokens = effectiveContext > 32000 ? 16384 : (effectiveContext ~/ 4);
-    if (CompactionManager.shouldAutoCompact(session, contextWindow: effectiveContext, reserve: reserveTokens)) {
-      callbacks?.onThoughtDelta?.call('\n[Context threshold reached: automatically compacting conversation history...]\n');
-      await CompactionManager.compact(session: session, provider: provider);
-    }
+    final effectiveContext =
+        contextWindow ?? CompactionManager.defaultContextWindowTokens;
+    final reserveTokens = effectiveContext > 32000
+        ? 16384
+        : (effectiveContext ~/ 4);
 
     int currentTurn = 0;
 
     while (currentTurn < maxTurns && !_isCancelled) {
       currentTurn++;
+
+      // Auto-compact before calling model if context threshold is reached
+      if (CompactionManager.shouldAutoCompact(
+        session,
+        contextWindow: effectiveContext,
+        reserve: reserveTokens,
+      )) {
+        callbacks?.onThoughtDelta?.call(
+          '\n[Context threshold reached: automatically compacting conversation history...]\n',
+        );
+        await CompactionManager.compact(session: session, provider: provider);
+      }
 
       final textBuffer = StringBuffer();
       final thoughtBuffer = StringBuffer();
@@ -98,6 +108,7 @@ class Agent {
       final stream = provider.streamChat(
         messages: session.messages,
         tools: tools,
+        maxTokens: maxTokens,
       );
 
       bool hasError = false;
@@ -124,10 +135,10 @@ class Agent {
               toolCalls.add(toolCall);
 
             case DoneEvent(
-                finishReason: final fr,
-                promptTokens: final pt,
-                completionTokens: final ct,
-              ):
+              finishReason: final fr,
+              promptTokens: final pt,
+              completionTokens: final ct,
+            ):
               lastFinishReason = fr;
               session.recordUsage(pt, ct);
 
@@ -205,7 +216,8 @@ class Agent {
         final stopwatch = Stopwatch()..start();
 
         if (tool == null) {
-          result = 'Error: Unknown tool "${call.name}". Available tools: ${_tools.keys.join(', ')}';
+          result =
+              'Error: Unknown tool "${call.name}". Available tools: ${_tools.keys.join(', ')}';
         } else {
           try {
             result = await tool.execute(call.arguments);
@@ -217,7 +229,11 @@ class Agent {
         tool?.onProgress = null;
 
         if (_isCancelled) {
-          callbacks?.onToolCallFinished?.call(call, 'Cancelled', stopwatch.elapsed);
+          callbacks?.onToolCallFinished?.call(
+            call,
+            'Cancelled',
+            stopwatch.elapsed,
+          );
           session.addMessage(
             ChatMessage.toolResult(
               toolCallId: call.id,
@@ -255,7 +271,9 @@ class Agent {
 
       if (_isCancelled) {
         session.addMessage(
-          ChatMessage.assistant('[Tool execution interrupted by user. Ready for steering instruction.]'),
+          ChatMessage.assistant(
+            '[Tool execution interrupted by user. Ready for steering instruction.]',
+          ),
         );
         break;
       }
