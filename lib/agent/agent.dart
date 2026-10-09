@@ -4,6 +4,7 @@ import '../ai/chat_message.dart';
 import '../ai/event_stream.dart';
 import '../ai/provider.dart';
 import 'compaction.dart';
+import 'context_meter.dart';
 import 'session.dart';
 import 'tool.dart';
 
@@ -65,6 +66,15 @@ class Agent {
   final int? contextWindow;
   final int? maxTokens;
 
+  /// The context gauge: what fraction of the window the *next request* would
+  /// occupy. Owned here because this is the layer that knows what a request will
+  /// cost — the estimate is of this transcript, and the measured figure is the
+  /// prompt tokens of the last request made through this provider.
+  late final ContextMeter meter = ContextMeter(
+    contextWindow:
+        contextWindow ?? CompactionManager.defaultContextWindowTokens,
+  );
+
   Agent({
     required this.provider,
     required this.session,
@@ -109,12 +119,6 @@ class Agent {
     session.addSystemPromptIfNeeded();
     session.addMessage(ChatMessage.user(userPrompt));
 
-    final effectiveContext =
-        contextWindow ?? CompactionManager.defaultContextWindowTokens;
-    final reserveTokens = effectiveContext > 32000
-        ? 16384
-        : (effectiveContext ~/ 4);
-
     int currentTurn = 0;
     // Occurrence counts per iteration signature (calls + results), so repeated
     // work is caught even when it alternates with other calls.
@@ -124,11 +128,15 @@ class Agent {
         !_iterationLimitReached(currentTurn, callbacks: callbacks)) {
       currentTurn++;
 
-      // Auto-compact before calling model if context threshold is reached
+      // Auto-compact before calling model if context threshold is reached. The
+      // numerator is the gauge's own reading, so the human who compacted because
+      // the gauge said 94% and the trigger that fired are looking at one number.
+      final occupiedTokens = meter.tokensFor(session);
       if (CompactionManager.shouldAutoCompact(
         session,
-        contextWindow: effectiveContext,
-        reserve: reserveTokens,
+        contextWindow: meter.contextWindow,
+        reserve: meter.reserve,
+        tokens: occupiedTokens,
       )) {
         callbacks?.onThoughtDelta?.call(
           '\n[Context threshold reached: automatically compacting conversation history...]\n',
@@ -177,6 +185,7 @@ class Agent {
             ):
               lastFinishReason = fr;
               session.recordUsage(pt, ct);
+              meter.recordPromptTokens(pt);
 
             case ErrorEvent(:final message):
               hasError = true;

@@ -17,8 +17,24 @@ indistinguishable from an interrupt on the keys we already own.
 
 ## Consequences
 
-Ownership flipping per iteration means the ambient line is only redrawn outside streaming windows,
-which is what keeps this a streaming CLI rather than a TUI. The single-slot queue is deliberate: a
-second message composes into the first rather than displacing it, so no composed text is ever lost.
-Bracketed paste becomes a hard prerequisite for typing during a turn, not a nicety — without it,
-every multi-line paste is an accidental send.
+Ownership flipping per iteration means the ambient line is drawn only at row boundaries, and is
+suspended rather than repainted whenever the stream is mid-line — a partially-written line leaves
+the row hidden instead of painted over text. That is what keeps this a streaming CLI rather than a
+TUI. The single-slot queue is deliberate: a second message composes into the first rather than
+displacing it, so no composed text is ever lost. Bracketed paste becomes a hard prerequisite for
+typing during a turn, not a nicety — without it, every multi-line paste is an accidental send.
+
+Two consequences the design tickets did not have to face, found while building:
+
+**The ambient line has no idle row.** Issue 22 prototyped an idle frame, but the prototype had no
+live prompt under it. In scrollback-only mode the prompt owns every row below the transcript, and
+its repaint clears to the bottom of the screen, so a row pinned beneath the prompt would be erased
+on each keystroke and redrawn after — the repaint loop this decision rules out. The line therefore
+exists only while a turn is running or was just interrupted. The reading an idle human needs, the
+context gauge and the compaction threshold, moves into the dock as a snapshot, which is what a dock
+is for: it names the state of the window the next exchange is about to be written into.
+
+**The window closes on a chunk boundary, not a timer.** A lone Escape press and an Alt chord are
+the same bytes, told apart only by timing. The decoder treats an Escape that ends a read chunk as
+the interrupt, and an Alt chord that arrives whole as a chord, which favours losing one stray
+character over swallowing the interrupt. Issue 25 owns replacing that with an escape timeout.

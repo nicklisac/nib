@@ -15,6 +15,26 @@ class ApprovalManager {
   /// Optional hook for testing to provide synthetic keystrokes.
   Future<Key> Function()? keyReader;
 
+  /// Called before the prompt reads a key, and after it has returned one. The
+  /// approval prompt *steals* the keys rather than contending for them: the UI
+  /// uses these to release any parked draft reader first, and to reopen the draft
+  /// window afterwards. The half-composed draft is held meanwhile, never dropped
+  /// (#23, feel doctrine rule 2).
+  Future<void> Function()? onApprovalStart;
+  void Function()? onApprovalEnd;
+
+  /// Runs one approval exchange with the keys stolen from whoever holds them,
+  /// and guarantees they are handed back — including when the answer is Esc or an
+  /// exception escapes the prompt.
+  Future<T> _withStolenKeys<T>(Future<T> Function() prompt) async {
+    await onApprovalStart?.call();
+    try {
+      return await prompt();
+    } finally {
+      onApprovalEnd?.call();
+    }
+  }
+
   Future<Key> _readKey() {
     if (keyReader != null) return keyReader!();
     return TerminalManager.instance.nextKey();
@@ -71,6 +91,14 @@ class ApprovalManager {
       '  ${theme.warning.text('⚠')} ${theme.primary.text('Review proposed changes to:')} ${theme.accent.text(path)}',
     );
 
+    return _withStolenKeys(() => _askFileEdit(theme, oldContent, newContent));
+  }
+
+  Future<bool> _askFileEdit(
+    NibTheme theme,
+    String oldContent,
+    String newContent,
+  ) async {
     while (true) {
       stdout.write(
         '  ${theme.secondary.text('Apply this change?')} ${theme.muted.text('[y: yes, n: no, d: show diff]')} ${theme.accent.text('❯')} ',
@@ -135,6 +163,10 @@ class ApprovalManager {
       '  ${theme.error.text('⚠ Potentially destructive shell command:')}',
     );
     stdout.writeln('    ${theme.code.text(command)}');
+    return _withStolenKeys(() => _askBash(theme, command));
+  }
+
+  Future<bool> _askBash(NibTheme theme, String command) async {
     stdout.write(
       '  ${theme.secondary.text('Execute?')} ${theme.muted.text('[y/n]')} ${theme.accent.text('❯')} ',
     );

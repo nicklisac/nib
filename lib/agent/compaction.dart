@@ -62,20 +62,23 @@ class CompactionManager {
   }
 
   /// Determines if automatic compaction should trigger based on context token limit.
+  /// [tokens] lets the caller supply the numerator — the context gauge's reading
+  /// — so the trigger and the gauge the human is reading can never disagree. It
+  /// defaults to the chars/4 estimate.
   static bool shouldAutoCompact(
     AgentSession session, {
     int contextWindow = defaultContextWindowTokens,
     int reserve = defaultCompactionReserveTokens,
+    int? tokens,
   }) {
     if (session.messages.length <= defaultKeepRecentMessages + 2) {
       return false;
     }
     final threshold = contextWindow - reserve;
-    final estimated = estimateTokens(
-      session.messages,
-      systemPrompt: session.systemPrompt,
-    );
-    return estimated >= threshold;
+    final occupied =
+        tokens ??
+        estimateTokens(session.messages, systemPrompt: session.systemPrompt);
+    return occupied >= threshold;
   }
 
   /// Compacts older session history into a structured summary (Tau-style).

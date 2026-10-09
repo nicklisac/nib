@@ -42,6 +42,10 @@ class OpenAiProvider implements LLMProvider {
         'model': model,
         'messages': messages.map((m) => m.toOpenAiJson()).toList(),
         'stream': true,
+        // Without this, OpenAI-compatible servers (including the local ones) never
+        // emit the final usage chunk, so prompt tokens stay null and the context
+        // gauge can only ever fall back to an estimate.
+        'stream_options': {'include_usage': true},
         'temperature': ?temperature,
         'max_tokens': ?maxTokens,
       };

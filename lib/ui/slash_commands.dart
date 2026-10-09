@@ -179,6 +179,20 @@ class SlashCommandHandler {
     );
     stdout.writeln('  ${Ansi.cyanText('/exit')}             Exit the CLI');
     stdout.writeln();
+    stdout.writeln(Ansi.boldText('Keys'));
+    final keys = [
+      ('Esc / Ctrl+C', 'stop the turn; your draft is kept'),
+      ('alt+enter', 'queue what you typed while a turn runs'),
+      ('enter', 'on an empty line, send the queued message'),
+      ('ctrl+j', 'newline instead of sending'),
+      ('paste', 'inserts literally; it never sends'),
+    ];
+    for (final key in keys) {
+      stdout.writeln(
+        '  ${Ansi.cyanText(key.$1.padRight(14))} ${Ansi.grayText(key.$2)}',
+      );
+    }
+    stdout.writeln();
   }
 
   Future<void> _handleUndo() async {
@@ -519,6 +533,9 @@ class SlashCommandHandler {
 
   void _showHistory() {
     final msgs = agent.session.messages;
+    final meter = agent.meter;
+    final spent =
+        agent.session.totalPromptTokens + agent.session.totalCompletionTokens;
     stdout.writeln();
     stdout.writeln(Ansi.boldText('Session Transcript Summary:'));
     stdout.writeln('  Session ID:         ${Ansi.cyanText(agent.session.id)}');
@@ -527,12 +544,39 @@ class SlashCommandHandler {
       '  Tool executions:    ${agent.session.toolExecutionsCount}',
     );
     stdout.writeln('  Undo history depth: ${UndoManager.instance.count}');
-    stdout.writeln('  Prompt tokens:      ${agent.session.totalPromptTokens}');
+    stdout.writeln();
+
+    // Tokens spent is an after-the-fact billing figure, so it lives here rather
+    // than on the ambient line's gauge (#20).
     stdout.writeln(
-      '  Completion tokens:  ${agent.session.totalCompletionTokens}',
+      '  ${Ansi.boldText('Tokens spent:')}       ${Ansi.cyanText(_formatTokens(spent))}',
+    );
+    stdout.writeln('    prompt:           ${agent.session.totalPromptTokens}');
+    stdout.writeln(
+      '    completion:        ${agent.session.totalCompletionTokens}',
+    );
+    stdout.writeln();
+
+    // The raw window numbers the ambient line leaves out, plus the threshold that
+    // will trigger compaction. Seeing how far you are from compaction is what
+    // keeps the transcript from changing underneath you (#21, doctrine rule 5).
+    final occupied = meter.tokensFor(agent.session);
+    final provenance = meter.isMeasured
+        ? Ansi.greenText('measured (provider usage)')
+        : Ansi.yellowText('estimated (chars/4)');
+    stdout.writeln(Ansi.boldText('Context gauge:'));
+    stdout.writeln(
+      '  Occupied:           ${Ansi.cyanText('${_formatTokens(occupied)} / ${_formatTokens(meter.contextWindow)}')}  ${Ansi.boldText(meter.displayFor(agent.session))}',
+    );
+    stdout.writeln('  Basis:            $provenance');
+    stdout.writeln(
+      '  Auto-compact at:    ${Ansi.cyanText(_formatTokens(meter.threshold))} (reserve ${_formatTokens(meter.reserve)})',
     );
     stdout.writeln();
   }
+
+  static String _formatTokens(int tokens) =>
+      tokens >= 1000 ? '${(tokens / 1000).toStringAsFixed(1)}k' : '$tokens';
 
   void _showTools() {
     stdout.writeln();
