@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# Forwarding alias for Nib
-exec "$(dirname "$0")/nib" "$@"

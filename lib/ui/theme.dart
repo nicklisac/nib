@@ -136,5 +136,3 @@ class NibTheme {
     }
   }
 }
-
-typedef TartTheme = NibTheme;

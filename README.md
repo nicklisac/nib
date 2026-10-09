@@ -20,7 +20,7 @@ lib/
 ├── agent/                  # Agent harness layer (independent of UI)
 │   ├── agent.dart          # Core loop: stream -> parse calls -> run tools -> repeat (with cancellation)
 │   ├── compaction.dart     # Tau-style context compaction & summarization checkpoint engine
-│   ├── config.dart         # ~/.nib/config.json with ~/.tart / ~/.tau fallback matching
+│   ├── config.dart         # ~/.nib/config.json & standard environment variable auto-detection
 │   ├── session.dart        # Message transcript, token accounting & ~/.nib/sessions/ persistence
 │   ├── undo_manager.dart   # Snapshot tracker powering one-click /undo
 │   ├── approval_manager.dart# Interactive tool confirmation checks (/confirm)
@@ -31,7 +31,10 @@ lib/
 │   ├── write_file_tool.dart# File creation & overwrite (tracked in undo stack)
 │   ├── edit_file_tool.dart # Surgical exact search & replace (with unified color diffs)
 │   ├── list_dir_tool.dart  # Directory and file tree listing
-│   └── search_files_tool.dart# Regex & pattern search across files
+│   ├── search_files_tool.dart# Regex & pattern search across files
+│   ├── skill_tool.dart     # Load full instructions of named agent skills
+│   ├── web_search_tool.dart# Web search via configurable provider (Exa API)
+│   └── web_fetch_tool.dart # URL fetcher converting web pages to clean markdown
 └── ui/                     # Terminal CLI UI layer
     ├── ansi.dart           # ANSI colors, banners, and formatters
     ├── theme.dart          # 24-bit TrueColor theme engine (Catppuccin, Tokyo Night, Nord, Gruvbox)
@@ -49,65 +52,90 @@ lib/
 
 ## ⚡ Quick Start
 
-### 1. Default (Matches your local ExLlama / tabbyAPI model)
-Nib automatically reads `~/.nib/config.json` (or falls back to `~/.tart/` and `~/.tau/`):
+### Installation
+
+**Option A: Clone and run directly**
 ```bash
+git clone https://github.com/nicklisac/nib.git
+cd nib
 ./nib
 ```
-Or resume your previous conversation where you left off:
+`./nib` auto-compiles an optimized kernel snapshot on launch (and rebuilds when any file changes), launching in ~70ms.
+
+**Option B: Global install via Dart**
 ```bash
-./nib --resume
+dart pub global activate --source git https://github.com/nicklisac/nib.git
+nib
 ```
 
-### 2. Offline Demo Mode (No API keys required)
-```bash
-./nib --mock
-```
-Or run one-shot commands directly from the shell:
-```bash
-./nib --mock "list files in this directory"
-./nib --mock "read pubspec.yaml"
-./nib --mock "check git status"
-```
+### Credentials & First Run
 
-### 3. Cloud LLM Providers
-Set your API key and run:
+Nib automatically detects standard provider environment variables:
 
 ```bash
-# OpenAI (or DeepSeek / Groq)
-export OPENAI_API_KEY="sk-..."
-./nib -m gpt-4o
-
-# Anthropic Claude
+# Anthropic Claude (Messages API)
 export ANTHROPIC_API_KEY="sk-ant-..."
-./nib -p anthropic -m claude-3-5-sonnet-20241022
+nib
+
+# OpenAI (or compatible API)
+export OPENAI_API_KEY="sk-..."
+nib
 
 # OpenRouter
 export OPENROUTER_API_KEY="sk-or-..."
-./nib -p openrouter -m anthropic/claude-3.5-sonnet
+nib
+
+# Google Gemini
+export GEMINI_API_KEY="..."
+nib
 
 # Local Ollama
-./nib -p ollama -m llama3 --base-url http://localhost:11434/v1
+export OLLAMA_BASE_URL="http://localhost:11434/v1"
+nib
+```
+
+Or resume your previous conversation where you left off:
+```bash
+nib --resume
 ```
 
 ---
 
 ## ⚙️ Configuration (`~/.nib/config.json`)
 
+To configure multiple named providers, custom base URLs, or local endpoints, create `~/.nib/config.json` (or `.nib/config.json` in your workspace):
+
 ```json
 {
-  "default_provider": "exllama",
-  "default_model": "Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6",
+  "default_provider": "anthropic",
+  "default_model": "claude-3-7-sonnet-20250219",
   "providers": {
-    "exllama": {
-      "name": "ExLlamaV3 (tabbyAPI)",
-      "model": "Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6",
-      "base_url": "http://localhost:5000/v1",
-      "api_key": "exl3-key",
-      "context_window": 262144,
-      "max_tokens": 16384
+    "anthropic": {
+      "name": "Anthropic Claude",
+      "model": "claude-3-7-sonnet-20250219",
+      "base_url": "https://api.anthropic.com",
+      "api_key": "sk-ant-...",
+      "context_window": 200000,
+      "max_tokens": 8192
+    },
+    "openai": {
+      "name": "OpenAI",
+      "model": "gpt-4o",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "sk-...",
+      "context_window": 128000,
+      "max_tokens": 4096
+    },
+    "local": {
+      "name": "Local Server (Ollama / vLLM / tabbyAPI)",
+      "model": "qwen2.5-coder:7b",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "optional-key",
+      "context_window": 32768,
+      "max_tokens": 4096
     }
   },
+  "search_provider": "exa",
   "max_turns": 0,
   "max_stuck_iterations": 5,
   "hard_iteration_cap": 200
@@ -173,7 +201,6 @@ A skill with `disable-model-invocation: true` in its frontmatter is hidden from 
 - `/history` - Display session message count & token usage
 - `/system [prompt]` - Inspect or append to the system prompt
 - `/clear` - Clear conversation history for a fresh turn
-- `/mock` - Switch to offline mock simulation mode
 - `/exit` - Exit Nib
 
 ---
