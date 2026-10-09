@@ -56,6 +56,10 @@ class SlashCommandHandler {
         await _handleImage(args);
         return true;
 
+      case '/new':
+        await _handleNew();
+        return true;
+
       case '/clear':
         agent.session.clearHistory();
         await agent.session.saveToDisk();
@@ -192,6 +196,9 @@ class SlashCommandHandler {
       '  ${Ansi.cyanText('/system [prompt]')}  Display or update the system prompt',
     );
     stdout.writeln(
+      '  ${Ansi.cyanText('/new')}              Start a brand new session with a fresh transcript',
+    );
+    stdout.writeln(
       '  ${Ansi.cyanText('/clear')}            Clear conversation history',
     );
     stdout.writeln('  ${Ansi.cyanText('/exit')}             Exit the CLI');
@@ -267,6 +274,29 @@ class SlashCommandHandler {
     stdout.writeln(
       NibTheme.current.success.text(
         '  ✔ Resumed session "$id" (${loaded.messages.length} messages loaded).',
+      ),
+    );
+  }
+
+  Future<void> _handleNew() async {
+    // Save current session first if it has any user messages
+    if (agent.session.hasUserMessages) {
+      await agent.session.saveToDisk();
+    }
+
+    final workspace = Directory.current.path;
+    final newSession = AgentSession.createNew(
+      appendPrompt: config?.systemPromptAppend,
+      workspacePath: workspace,
+    );
+
+    agent.session = newSession;
+    UndoManager.instance.clearHistory();
+    agent.meter.reset();
+
+    stdout.writeln(
+      NibTheme.current.success.text(
+        '  ✔ Started new session "${newSession.id}".',
       ),
     );
   }

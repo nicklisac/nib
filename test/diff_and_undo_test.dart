@@ -1,10 +1,14 @@
 import 'dart:io';
 import 'package:test/test.dart';
+import 'package:nib/agent/agent.dart';
 import 'package:nib/agent/session.dart';
 import 'package:nib/agent/undo_manager.dart';
+import 'package:nib/ai/chat_message.dart';
+import 'package:nib/ai/mock_provider.dart';
 import 'package:nib/tools/edit_file_tool.dart';
 import 'package:nib/tools/write_file_tool.dart';
 import 'package:nib/ui/diff_formatter.dart';
+import 'package:nib/ui/slash_commands.dart';
 
 void main() {
   group('Diff & Undo & Session Persistence Test', () {
@@ -76,5 +80,45 @@ void main() {
       expect(restored.totalPromptTokens, equals(150));
       expect(restored.totalCompletionTokens, equals(42));
     });
+
+    test(
+      'SlashCommandHandler /new creates a fresh session and resets undo and meter',
+      () async {
+        final session = AgentSession(id: 'old_session_1');
+        session.addMessage(ChatMessage.user('First request'));
+        final agent = Agent(provider: MockProvider(), session: session);
+        agent.meter.recordPromptTokens(500);
+        expect(agent.meter.isMeasured, isTrue);
+
+        UndoManager.instance.recordEdit(
+          path: 'test.txt',
+          contentBefore: 'before',
+          contentAfter: 'after',
+        );
+        expect(UndoManager.instance.canUndo, isTrue);
+
+        final handler = SlashCommandHandler(agent);
+        final handled = await handler.handle('/new');
+        expect(handled, isTrue);
+
+        // Verify that a new session was created with a different ID
+        expect(agent.session.id, isNot(equals('old_session_1')));
+        expect(agent.session.messages.length, equals(1));
+        expect(agent.session.messages.first.role, equals(Role.system));
+        expect(agent.session.hasUserMessages, isFalse);
+
+        // Verify undo history and meter were reset
+        expect(UndoManager.instance.canUndo, isFalse);
+        expect(agent.meter.isMeasured, isFalse);
+
+        // Verify old session was saved to disk
+        final savedOld = await AgentSession.loadFromDisk('old_session_1');
+        expect(savedOld, isNotNull);
+        expect(
+          savedOld!.messages.any((m) => m.content == 'First request'),
+          isTrue,
+        );
+      },
+    );
   });
 }

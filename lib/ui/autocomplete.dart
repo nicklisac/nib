@@ -86,6 +86,11 @@ class AutoCompleter {
       '/confirm',
     ),
     SlashCommandInfo(
+      '/new',
+      'Start a brand new session with a fresh transcript',
+      '/new',
+    ),
+    SlashCommandInfo(
       '/clear',
       'Clear terminal screen and redraw status bar',
       '/clear',

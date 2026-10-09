@@ -46,6 +46,11 @@ class ContextMeter {
     if (promptTokens != null) measuredPromptTokens = promptTokens;
   }
 
+  /// Resets the meter (clears provider-reported tokens so gauge estimates anew).
+  void reset() {
+    measuredPromptTokens = null;
+  }
+
   /// Tokens the next request would occupy.
   int tokensFor(AgentSession session) =>
       measuredPromptTokens ??

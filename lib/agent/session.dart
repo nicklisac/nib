@@ -21,8 +21,27 @@ class AgentSession {
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
 
+  /// True if the session has at least one user message recorded.
+  bool get hasUserMessages => _messages.any((m) => m.role == Role.user);
+
   void addMessage(ChatMessage message) {
     _messages.add(message);
+  }
+
+  /// Creates a fresh session initialized with current system prompt and workspace.
+  factory AgentSession.createNew({
+    String? id,
+    String? basePrompt,
+    String? appendPrompt,
+    String? workspacePath,
+  }) {
+    final session = AgentSession(id: id, workspacePath: workspacePath);
+    session.rebuildSystemPrompt(
+      basePrompt: basePrompt,
+      appendPrompt: appendPrompt,
+      workspacePath: workspacePath,
+    );
+    return session;
   }
 
   void addSystemPromptIfNeeded() {

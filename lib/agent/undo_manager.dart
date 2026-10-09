@@ -63,4 +63,9 @@ class UndoManager {
   }
 
   int get count => _history.length;
+
+  /// Clears undo history (called on session reset or when starting a fresh session).
+  void clearHistory() {
+    _history.clear();
+  }
 }
