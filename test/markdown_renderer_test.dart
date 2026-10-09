@@ -278,5 +278,34 @@ def gate(pr: dict) -> bool:
       expect(rendered, isNot(contains('~~great~~')));
       expect(rendered, isNot(contains('~~dramatic~~')));
     });
+
+    test('renderTable flexes wide table cells to fit within maxTableWidth', () {
+      final lines = [
+        '| Camp | Sliceable floor | Practical floor |',
+        '| --- | --- | --- |',
+        '| FDM w/ Arachne (Prusa, Bambu, Cura-based) | ~0.4 mm — one extrusion, needs "Detect thin walls", very fragile | 0.8 mm (two extrusion widths) with no special settings; Qidi\'s own guidance says exactly this |',
+        '| Resin (Formlabs) | 0.2 mm recommended minimum per Form 3 design specs | ~0.4–0.6 mm once you account for peel warp and IPA swelling |',
+        '| Consumer mSLA (Elegoo/Anycubic) | similar optics to Formlabs | ~0.6 mm commonly quoted |',
+      ];
+
+      // Test at 80 columns
+      final rendered80 = MarkdownRenderer.renderTable(lines, null, 80);
+      final lines80 = rendered80.split('\n').where((l) => l.trim().isNotEmpty);
+      for (final line in lines80) {
+        final clean = line.replaceAll(RegExp(r'\x1B\[[0-9;]*m'), '');
+        expect(
+          clean.length,
+          lessThanOrEqualTo(80),
+          reason: 'Line "$clean" exceeds 80 columns (${clean.length})',
+        );
+      }
+
+      // Verify content is preserved and wrapped
+      expect(rendered80, contains('Camp'));
+      expect(rendered80, contains('Sliceable floor'));
+      expect(rendered80, contains('Practical floor'));
+      expect(rendered80, contains('FDM w/ Arachne'));
+      expect(rendered80, contains('Resin'));
+    });
   });
 }

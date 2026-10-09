@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math';
+import 'package:characters/characters.dart';
 import 'package:dart_console/dart_console.dart';
 import 'package:val_highlight/languages/all.dart';
 import 'package:val_highlight/val_highlight.dart';
@@ -168,8 +169,13 @@ class MarkdownRenderer {
     return trimmed.split('|').map((c) => c.trim()).toList();
   }
 
-  /// Renders a full markdown table from a list of markdown lines with rounded unicode borders.
-  static String renderTable(List<String> lines, [NibTheme? theme]) {
+  /// Renders a full markdown table from a list of markdown lines with rounded unicode borders,
+  /// automatically flexing and wrapping cell widths to fit within [maxTableWidth] or the terminal width.
+  static String renderTable(
+    List<String> lines, [
+    NibTheme? theme,
+    int? maxTableWidth,
+  ]) {
     final activeTheme = theme ?? NibTheme.current;
     if (lines.length < 2) return lines.join('\n');
 
@@ -180,6 +186,8 @@ class MarkdownRenderer {
     final delimCells = splitRow(delimLine);
 
     final columnCount = rawHeaders.length;
+    if (columnCount == 0) return lines.join('\n');
+
     final alignments = <TextAlignment>[];
 
     for (int col = 0; col < columnCount; col++) {
@@ -197,18 +205,11 @@ class MarkdownRenderer {
       }
     }
 
-    final table = Table()
-      ..borderStyle = BorderStyle.rounded
-      ..borderType = BorderType.grid
-      ..headerStyle = FontStyle.bold;
-
+    final formattedHeaders = <String>[];
     for (int col = 0; col < columnCount; col++) {
-      final headerText = formatInline(
-        rawHeaders[col],
-        activeTheme,
-        inTable: true,
+      formattedHeaders.add(
+        formatInline(rawHeaders[col], activeTheme, inTable: true),
       );
-      table.insertColumn(header: headerText, alignment: alignments[col]);
     }
 
     final rows = <List<String>>[];
@@ -233,20 +234,273 @@ class MarkdownRenderer {
       rows.add(row);
     }
 
-    if (rows.isNotEmpty) {
-      table.insertRows(rows);
+    // Measure natural width of each column (longest cell display width)
+    final naturalWidths = List<int>.filled(columnCount, 0);
+    for (int col = 0; col < columnCount; col++) {
+      int maxCol = formattedHeaders[col].stripEscapeCharacters().displayWidth;
+      for (final row in rows) {
+        if (col < row.length) {
+          final w = row[col].stripEscapeCharacters().displayWidth;
+          if (w > maxCol) maxCol = w;
+        }
+      }
+      naturalWidths[col] = max(maxCol, 1);
     }
+
+    // Determine available width for table content.
+    // dart_console Table grid frame overhead: (columns + 1) borders + (2 * columns) padding spaces = 3 * columns + 1.
+    // Plus 2 spaces indentation when writing out: total framing overhead = 3 * columns + 3.
+    int termWidth = 80;
+    try {
+      if (stdout.hasTerminal) {
+        termWidth = stdout.terminalColumns;
+      }
+    } catch (_) {}
+
+    // Sane upper ceiling for prose readability per #24
+    final maxAllowedWidth = maxTableWidth ?? min(termWidth, 120);
+    final frameOverhead = 3 * columnCount + 3;
+    final availableContentWidth = max(
+      columnCount * 4,
+      maxAllowedWidth - frameOverhead,
+    );
+
+    final totalNatural = naturalWidths.fold<int>(0, (a, b) => a + b);
+    final columnWidths = List<int>.from(naturalWidths);
+
+    if (totalNatural > availableContentWidth) {
+      // Flex allocation pass:
+      // Lock columns that already fit within their fair share, and proportionally shrink wider columns.
+      var remainingWidth = availableContentWidth;
+      var remainingCols = columnCount;
+      final needsFlex = List<bool>.filled(columnCount, true);
+
+      bool changed = true;
+      while (changed && remainingCols > 0) {
+        changed = false;
+        final fairShare = max(1, remainingWidth ~/ remainingCols);
+        for (int col = 0; col < columnCount; col++) {
+          if (needsFlex[col] && naturalWidths[col] <= fairShare) {
+            needsFlex[col] = false;
+            columnWidths[col] = naturalWidths[col];
+            remainingWidth -= naturalWidths[col];
+            remainingCols--;
+            changed = true;
+          }
+        }
+      }
+
+      if (remainingCols > 0 && remainingWidth > 0) {
+        final flexNaturalSum = [
+          for (int c = 0; c < columnCount; c++)
+            if (needsFlex[c]) naturalWidths[c],
+        ].fold<int>(0, (a, b) => a + b);
+
+        final minColWidth = max(4, remainingWidth ~/ (remainingCols * 2));
+        for (int col = 0; col < columnCount; col++) {
+          if (needsFlex[col]) {
+            final share = (naturalWidths[col] / flexNaturalSum * remainingWidth)
+                .floor();
+            columnWidths[col] = max(minColWidth, share);
+          }
+        }
+
+        var currentSum = columnWidths.fold<int>(0, (a, b) => a + b);
+
+        // Reconcile any rounding difference so total matches availableContentWidth exactly
+        while (currentSum > availableContentWidth) {
+          int largestCol = -1;
+          int largestVal = minColWidth;
+          for (int c = 0; c < columnCount; c++) {
+            if (needsFlex[c] && columnWidths[c] > largestVal) {
+              largestVal = columnWidths[c];
+              largestCol = c;
+            }
+          }
+          if (largestCol == -1) break;
+          columnWidths[largestCol]--;
+          currentSum--;
+        }
+        while (currentSum < availableContentWidth) {
+          int deficitCol = -1;
+          int maxDeficit = -1;
+          for (int c = 0; c < columnCount; c++) {
+            if (needsFlex[c]) {
+              final deficit = naturalWidths[c] - columnWidths[c];
+              if (deficit > maxDeficit) {
+                maxDeficit = deficit;
+                deficitCol = c;
+              }
+            }
+          }
+          if (deficitCol == -1) break;
+          columnWidths[deficitCol]++;
+          currentSum++;
+        }
+      }
+    }
+    final topBorder =
+        '  ╭${[for (int i = 0; i < columnCount; i++) '─' * (columnWidths[i] + 2)].join('┬')}╮';
+
+    final rowSeparator =
+        '  ├${[for (int i = 0; i < columnCount; i++) '─' * (columnWidths[i] + 2)].join('┼')}┤';
+
+    final bottomBorder =
+        '  ╰${[for (int i = 0; i < columnCount; i++) '─' * (columnWidths[i] + 2)].join('┴')}╯';
 
     final buf = StringBuffer();
     buf.writeln();
-    final rendered = table.render();
-    for (final tLine in rendered.split('\n')) {
-      if (tLine.isNotEmpty) {
-        buf.writeln('  $tLine');
+    buf.writeln(topBorder);
+
+    void renderRow(List<String> rowCells, {required bool isHeader}) {
+      final wrappedCells = <List<String>>[];
+      for (int c = 0; c < columnCount; c++) {
+        final cellText = c < rowCells.length ? rowCells[c] : '';
+        wrappedCells.add(_wrapCellText(cellText, columnWidths[c]));
+      }
+
+      final rowHeight = wrappedCells.map((c) => c.length).fold<int>(1, max);
+
+      for (int line = 0; line < rowHeight; line++) {
+        buf.write('  │');
+        for (int c = 0; c < columnCount; c++) {
+          final cellLine = line < wrappedCells[c].length
+              ? wrappedCells[c][line]
+              : '';
+          final aligned = _alignCell(cellLine, columnWidths[c], alignments[c]);
+          if (isHeader) {
+            buf.write(' \x1B[1m$aligned\x1B[0m │');
+          } else {
+            buf.write(' $aligned\x1B[0m │');
+          }
+        }
+        buf.writeln();
       }
     }
 
+    renderRow(formattedHeaders, isHeader: true);
+    buf.writeln(rowSeparator);
+
+    for (int r = 0; r < rows.length; r++) {
+      renderRow(rows[r], isHeader: false);
+      if (r < rows.length - 1) {
+        buf.writeln(rowSeparator);
+      }
+    }
+
+    buf.writeln(bottomBorder);
+
     return buf.toString();
+  }
+
+  static String _alignCell(String text, int width, TextAlignment alignment) {
+    final dw = text.stripEscapeCharacters().displayWidth;
+    final pad = max(0, width - dw);
+    switch (alignment) {
+      case TextAlignment.right:
+        return (' ' * pad) + text;
+      case TextAlignment.center:
+        final left = pad ~/ 2;
+        final right = pad - left;
+        return (' ' * left) + text + (' ' * right);
+      case TextAlignment.left:
+        return text + (' ' * pad);
+    }
+  }
+
+  static List<String> _wrapCellText(String text, int width) {
+    if (text.isEmpty) return [''];
+    final words = text.split(' ');
+    final lines = <String>[];
+    var currentLine = StringBuffer();
+    var currentWidth = 0;
+
+    for (final word in words) {
+      if (word.isEmpty) continue;
+      final wordWidth = word.stripEscapeCharacters().displayWidth;
+
+      if (currentWidth == 0) {
+        if (wordWidth <= width) {
+          currentLine.write(word);
+          currentWidth = wordWidth;
+        } else {
+          final chunks = _breakWord(word, width);
+          for (int i = 0; i < chunks.length - 1; i++) {
+            lines.add(chunks[i]);
+          }
+          currentLine.write(chunks.last);
+          currentWidth = chunks.last.stripEscapeCharacters().displayWidth;
+        }
+      } else {
+        if (currentWidth + 1 + wordWidth <= width) {
+          currentLine.write(' $word');
+          currentWidth += 1 + wordWidth;
+        } else {
+          lines.add(currentLine.toString());
+          currentLine = StringBuffer();
+          currentWidth = 0;
+
+          if (wordWidth <= width) {
+            currentLine.write(word);
+            currentWidth = wordWidth;
+          } else {
+            final chunks = _breakWord(word, width);
+            for (int i = 0; i < chunks.length - 1; i++) {
+              lines.add(chunks[i]);
+            }
+            currentLine.write(chunks.last);
+            currentWidth = chunks.last.stripEscapeCharacters().displayWidth;
+          }
+        }
+      }
+    }
+
+    if (currentLine.isNotEmpty || lines.isEmpty) {
+      lines.add(currentLine.toString());
+    }
+    return lines;
+  }
+
+  static List<String> _breakWord(String word, int width) {
+    if (width <= 0) return [word];
+    final ansiRegex = RegExp(r'\x1B\[[0-9;]*[a-zA-Z]');
+    final tokens = <String>[];
+    var lastEnd = 0;
+    for (final match in ansiRegex.allMatches(word)) {
+      if (match.start > lastEnd) {
+        tokens.add(word.substring(lastEnd, match.start));
+      }
+      tokens.add(match.group(0)!);
+      lastEnd = match.end;
+    }
+    if (lastEnd < word.length) {
+      tokens.add(word.substring(lastEnd));
+    }
+
+    final chunks = <String>[];
+    var chunk = StringBuffer();
+    var currentWidth = 0;
+
+    for (final token in tokens) {
+      if (token.startsWith('\x1B')) {
+        chunk.write(token);
+      } else {
+        for (final char in token.characters) {
+          final cw = char.displayWidth;
+          if (currentWidth + cw > width && currentWidth > 0) {
+            chunks.add(chunk.toString());
+            chunk = StringBuffer();
+            currentWidth = 0;
+          }
+          chunk.write(char);
+          currentWidth += cw;
+        }
+      }
+    }
+    if (chunk.isNotEmpty) {
+      chunks.add(chunk.toString());
+    }
+    return chunks.isEmpty ? [word] : chunks;
   }
 }
 

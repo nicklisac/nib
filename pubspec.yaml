@@ -12,6 +12,7 @@ environment:
 # Add regular dependencies here.
 dependencies:
   args: ^2.7.0
+  characters: ^1.4.1
   dart_console: ^5.1.0
   diffutil_dart: ^5.0.0
   html: ^0.15.7
