@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import '../ai/image_attachment.dart';
 
 /// Metadata for a registered slash command.
 class SlashCommandInfo {
@@ -13,6 +14,16 @@ class SlashCommandInfo {
 /// Fast fuzzy and prefix autocompleter for workspace files and slash commands.
 class AutoCompleter {
   static const List<SlashCommandInfo> commandRegistry = [
+    SlashCommandInfo(
+      '/thinking',
+      'Inspect or set thinking level ladder (off..max)',
+      '/thinking [level]',
+    ),
+    SlashCommandInfo(
+      '/image',
+      'Attach image from path or clipboard into turn context',
+      '/image [path]',
+    ),
     SlashCommandInfo(
       '/resume',
       'Pick and resume a saved session (interactive picker)',
@@ -146,6 +157,7 @@ class AutoCompleter {
     var expanded = prompt;
     for (final match in matches) {
       final filePath = match.group(1)!;
+      if (ImageAttachment.isImageFile(filePath)) continue;
       final file = File(filePath);
       if (await file.exists()) {
         try {

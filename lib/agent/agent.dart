@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import '../ai/chat_message.dart';
 import '../ai/event_stream.dart';
+import '../ai/image_attachment.dart';
 import '../ai/provider.dart';
 import 'compaction.dart';
 import 'context_meter.dart';
 import 'session.dart';
+import 'thinking_level.dart';
 import 'tool.dart';
 
 /// Callbacks for streaming events to the UI during agent execution.
@@ -65,6 +67,7 @@ class Agent {
 
   final int? contextWindow;
   final int? maxTokens;
+  ThinkingLevel thinkingLevel;
 
   /// The context gauge: what fraction of the window the *next request* would
   /// occupy. Owned here because this is the layer that knows what a request will
@@ -84,7 +87,8 @@ class Agent {
     this.hardIterationCap = 200,
     this.contextWindow,
     this.maxTokens,
-  }) {
+    ThinkingLevel? thinkingLevel,
+  }) : thinkingLevel = thinkingLevel ?? ThinkingLevel.medium {
     for (final t in tools) {
       registerTool(t);
     }
@@ -114,10 +118,14 @@ class Agent {
   }
 
   /// Runs the full agent loop for the provided user message.
-  Future<void> runTurn(String userPrompt, {AgentCallbacks? callbacks}) async {
+  Future<void> runTurn(
+    String userPrompt, {
+    List<ImageAttachment>? images,
+    AgentCallbacks? callbacks,
+  }) async {
     _isCancelled = false;
     session.addSystemPromptIfNeeded();
-    session.addMessage(ChatMessage.user(userPrompt));
+    session.addMessage(ChatMessage.user(userPrompt, images: images));
 
     int currentTurn = 0;
     // Occurrence counts per iteration signature (calls + results), so repeated
@@ -153,6 +161,7 @@ class Agent {
         messages: session.messages,
         tools: tools,
         maxTokens: maxTokens,
+        thinkingLevel: thinkingLevel,
       );
 
       bool hasError = false;

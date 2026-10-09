@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../agent/thinking_level.dart';
 import '../agent/tool.dart';
 import 'chat_message.dart';
 import 'event_stream.dart';
@@ -34,6 +35,7 @@ class OpenAiProvider implements LLMProvider {
     required List<AgentTool> tools,
     double? temperature,
     int? maxTokens,
+    ThinkingLevel? thinkingLevel,
   }) async* {
     final client = http.Client();
     try {
@@ -49,6 +51,19 @@ class OpenAiProvider implements LLMProvider {
         'temperature': ?temperature,
         'max_tokens': ?maxTokens,
       };
+
+      if (thinkingLevel != null) {
+        if (thinkingLevel.openAiReasoningEffort != null) {
+          requestBody['reasoning_effort'] = thinkingLevel.openAiReasoningEffort;
+        }
+        // Local servers (tabbyAPI / exllama / vLLM) via chat_template_kwargs
+        if (thinkingLevel == ThinkingLevel.off) {
+          requestBody['chat_template_kwargs'] = {'enable_thinking': false};
+        } else {
+          requestBody['chat_template_kwargs'] =
+              thinkingLevel.localChatTemplateKwargs;
+        }
+      }
 
       if (tools.isNotEmpty) {
         requestBody['tools'] = tools.map((t) => t.toOpenAiSchema()).toList();

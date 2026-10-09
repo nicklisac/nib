@@ -6,6 +6,7 @@ import '../agent/agent.dart';
 import '../agent/approval_manager.dart';
 import '../agent/config.dart';
 import '../agent/session.dart';
+import '../ai/image_attachment.dart';
 import 'ambient_line.dart';
 import 'ansi.dart';
 import 'autocomplete.dart';
@@ -62,6 +63,12 @@ class CliUi {
     }
     _promptReader.onCompose = (queued) {
       _ambient.showComposition(queued: queued);
+    };
+    _promptReader.onThinkingCycle = () {
+      agent.thinkingLevel = agent.thinkingLevel.next();
+      if (ScreenCoordinator.instance.isActive) {
+        _ambient.renderDirect();
+      }
     };
     _promptReader.onSessionPicker = () async {
       final chosen = await SessionPicker.pickSession(
@@ -194,11 +201,41 @@ class CliUi {
           continue;
         }
 
+        // Check for attached images from /image or prompt mentions/paths
+        final imageExtraction = await ImageAttachment.extractFromPrompt(
+          trimmed,
+        );
+        final attachments = <ImageAttachment>[
+          ..._slashHandler.pendingImages,
+          ...imageExtraction.images,
+        ];
+        _slashHandler.pendingImages.clear();
+
+        if (attachments.isNotEmpty) {
+          final provConf = config?.providers[agent.provider.name];
+          if (provConf?.supportsImages == false) {
+            _writeLine(
+              theme.warning.text(
+                '  ⚠ Model "${agent.provider.model}" is configured as text-only and does not support image input.',
+              ),
+            );
+          } else {
+            for (final img in attachments) {
+              final label = img.originalPath ?? 'clipboard';
+              _writeLine(
+                theme.secondary.text(
+                  '  🖼 Attached: $label (${img.width}x${img.height}, ${img.mimeType})',
+                ),
+              );
+            }
+          }
+        }
+
         // Automatically expand @file mentions into prompt context
         final expandedPrompt = await AutoCompleter.expandFileMentions(trimmed);
 
         // Execute agent turn with live streaming callbacks
-        await _executeAgentTurn(expandedPrompt);
+        await _executeAgentTurn(expandedPrompt, images: attachments);
         await _afterTurn();
       }
     } finally {
@@ -345,8 +382,17 @@ class CliUi {
       _writeLine(StatusBar.render(agent));
     }
     renderUserTurn(queued.trim());
+    final imageExtraction = await ImageAttachment.extractFromPrompt(
+      queued.trim(),
+    );
+    final attachments = <ImageAttachment>[
+      ..._slashHandler.pendingImages,
+      ...imageExtraction.images,
+    ];
+    _slashHandler.pendingImages.clear();
+
     final expanded = await AutoCompleter.expandFileMentions(queued.trim());
-    await _executeAgentTurn(expanded);
+    await _executeAgentTurn(expanded, images: attachments);
     await _afterTurn();
   }
 
@@ -377,8 +423,9 @@ class CliUi {
   /// Runs a single turn with the given prompt.
   Future<void> runWithPrompt(String prompt) async {
     _setupSigintHandler();
+    final imageExtraction = await ImageAttachment.extractFromPrompt(prompt);
     final expandedPrompt = await AutoCompleter.expandFileMentions(prompt);
-    await _executeAgentTurn(expandedPrompt);
+    await _executeAgentTurn(expandedPrompt, images: imageExtraction.images);
     await _sigintSub?.cancel();
   }
 
@@ -473,7 +520,10 @@ class CliUi {
     _ambient.showInterrupted(keyName: keyName, draftKept: hadDraft);
   }
 
-  Future<void> _executeAgentTurn(String prompt) async {
+  Future<void> _executeAgentTurn(
+    String prompt, {
+    List<ImageAttachment>? images,
+  }) async {
     _turnInterrupted = false;
     _inThoughtBlock = false;
     _isExecutingTurn = true;
@@ -581,7 +631,7 @@ class CliUi {
     }
 
     try {
-      await agent.runTurn(prompt, callbacks: callbacks);
+      await agent.runTurn(prompt, images: images, callbacks: callbacks);
     } catch (e) {
       _ambient.clearForTranscriptWrite();
       markdownPrinter.flush();

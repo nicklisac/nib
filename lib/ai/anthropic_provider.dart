@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../agent/thinking_level.dart';
 import '../agent/tool.dart';
 import 'chat_message.dart';
 import 'event_stream.dart';
@@ -33,6 +34,7 @@ class AnthropicProvider implements LLMProvider {
     required List<AgentTool> tools,
     double? temperature,
     int? maxTokens,
+    ThinkingLevel? thinkingLevel,
   }) async* {
     final client = http.Client();
     try {
@@ -51,19 +53,33 @@ class AnthropicProvider implements LLMProvider {
         if (msg.role == Role.system) continue;
 
         if (msg.role == Role.user) {
+          final contentBlocks = <Map<String, dynamic>>[];
+          if (msg.images != null && msg.images!.isNotEmpty) {
+            for (final img in msg.images!) {
+              contentBlocks.add(img.toAnthropicBlock());
+            }
+          }
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            contentBlocks.add({'type': 'text', 'text': msg.content!});
+          }
+
           if (conversationMessages.isNotEmpty &&
               conversationMessages.last['role'] == 'user') {
             final prev = conversationMessages.last['content'];
             if (prev is String) {
-              conversationMessages.last['content'] =
-                  '$prev\n\n${msg.content ?? ''}';
+              conversationMessages.last['content'] = [
+                {'type': 'text', 'text': prev},
+                ...contentBlocks,
+              ];
             } else if (prev is List) {
-              prev.add({'type': 'text', 'text': msg.content ?? ''});
+              prev.addAll(contentBlocks);
             }
           } else {
             conversationMessages.add({
               'role': 'user',
-              'content': msg.content ?? '',
+              'content': contentBlocks.isNotEmpty
+                  ? contentBlocks
+                  : (msg.content ?? ''),
             });
           }
         } else if (msg.role == Role.assistant) {
@@ -104,13 +120,22 @@ class AnthropicProvider implements LLMProvider {
         }
       }
 
+      var effectiveMaxTokens = maxTokens ?? 4096;
+      final budget = thinkingLevel?.anthropicBudget;
+      if (budget != null && effectiveMaxTokens <= budget) {
+        effectiveMaxTokens = budget + 4096;
+      }
+
       final requestBody = <String, dynamic>{
         'model': model,
         'messages': conversationMessages,
-        'max_tokens': maxTokens ?? 4096,
+        'max_tokens': effectiveMaxTokens,
         'stream': true,
         if (systemPrompt.isNotEmpty) 'system': systemPrompt,
-        'temperature': ?temperature,
+        if (budget != null)
+          'thinking': {'type': 'enabled', 'budget_tokens': budget},
+        // Anthropic requires temperature to be omitted or 1.0 when thinking is enabled
+        if (budget == null) 'temperature': ?temperature,
       };
 
       if (tools.isNotEmpty) {

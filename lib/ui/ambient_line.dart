@@ -18,6 +18,7 @@ enum AmbientField {
   tokenRate,
   queue,
   gauge,
+  thinkingLevel,
   tokensSpent,
   toolProgress,
 
@@ -413,6 +414,11 @@ class AmbientLine {
     fields[AmbientField.gauge] = hot
         ? theme.warning.text(gaugeText)
         : theme.secondary.text(gaugeText);
+
+    final thinkLabel = agent.thinkingLevel.label;
+    fields[AmbientField.thinkingLevel] = agent.thinkingLevel.isOff
+        ? theme.muted.text('🧠 off')
+        : theme.secondary.text('🧠 $thinkLabel');
 
     final spent =
         agent.session.totalPromptTokens + agent.session.totalCompletionTokens;

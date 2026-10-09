@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../agent/thinking_level.dart';
 import '../agent/tool.dart';
 import 'chat_message.dart';
 import 'event_stream.dart';
@@ -20,6 +21,7 @@ class MockProvider implements LLMProvider {
     required List<AgentTool> tools,
     double? temperature,
     int? maxTokens,
+    ThinkingLevel? thinkingLevel,
   }) async* {
     final lastMessage = messages.last;
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'image_attachment.dart';
 
 /// Represents a role in the conversation.
 enum Role { system, user, assistant, tool }
@@ -48,6 +49,7 @@ class ChatMessage {
   final List<ToolCall>? toolCalls;
   final String? toolCallId;
   final String? toolName;
+  final List<ImageAttachment>? images;
 
   ChatMessage({
     required this.role,
@@ -55,13 +57,14 @@ class ChatMessage {
     this.toolCalls,
     this.toolCallId,
     this.toolName,
+    this.images,
   });
 
   factory ChatMessage.system(String content) =>
       ChatMessage(role: Role.system, content: content);
 
-  factory ChatMessage.user(String content) =>
-      ChatMessage(role: Role.user, content: content);
+  factory ChatMessage.user(String content, {List<ImageAttachment>? images}) =>
+      ChatMessage(role: Role.user, content: content, images: images);
 
   factory ChatMessage.assistant(String content, {List<ToolCall>? toolCalls}) =>
       ChatMessage(role: Role.assistant, content: content, toolCalls: toolCalls);
@@ -114,6 +117,16 @@ class ChatMessage {
       case Role.system:
         return {'role': 'system', 'content': content ?? ''};
       case Role.user:
+        if (images != null && images!.isNotEmpty) {
+          final parts = <Map<String, dynamic>>[];
+          for (final img in images!) {
+            parts.add(img.toOpenAiBlock());
+          }
+          if (content != null && content!.isNotEmpty) {
+            parts.add({'type': 'text', 'text': content!});
+          }
+          return {'role': 'user', 'content': parts};
+        }
         return {'role': 'user', 'content': content ?? ''};
       case Role.assistant:
         final map = <String, dynamic>{'role': 'assistant'};

@@ -5,6 +5,7 @@ import 'package:nib/agent/approval_manager.dart';
 import 'package:nib/agent/config.dart';
 import 'package:nib/agent/session.dart';
 import 'package:nib/agent/skills.dart';
+import 'package:nib/agent/thinking_level.dart';
 import 'package:nib/ai/anthropic_provider.dart';
 import 'package:nib/ai/mock_provider.dart';
 import 'package:nib/ai/openai_provider.dart';
@@ -266,6 +267,11 @@ void main(List<String> arguments) async {
       activeProviderConf?.maxStuckIterations ?? config.maxStuckIterations;
   final activeHardCap =
       activeProviderConf?.hardIterationCap ?? config.hardIterationCap;
+  final activeThinkingLevelStr =
+      activeProviderConf?.thinkingLevel ?? config.thinkingLevel;
+  final activeThinkingLevel = activeThinkingLevelStr != null
+      ? ThinkingLevel.fromString(activeThinkingLevelStr)
+      : ThinkingLevel.medium;
 
   final agent = Agent(
     provider: provider,
@@ -276,6 +282,7 @@ void main(List<String> arguments) async {
     maxTurns: activeMaxTurns,
     maxStuckIterations: activeMaxStuck,
     hardIterationCap: activeHardCap,
+    thinkingLevel: activeThinkingLevel,
   );
 
   final ui = CliUi(agent, config);

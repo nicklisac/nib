@@ -16,6 +16,8 @@ class ProviderConfig {
   final int? maxTurns;
   final int? maxStuckIterations;
   final int? hardIterationCap;
+  final String? thinkingLevel;
+  final bool? supportsImages;
 
   ProviderConfig({
     required this.name,
@@ -27,6 +29,8 @@ class ProviderConfig {
     this.maxTurns,
     this.maxStuckIterations,
     this.hardIterationCap,
+    this.thinkingLevel,
+    this.supportsImages,
   });
 
   factory ProviderConfig.fromJson(String id, Map<String, dynamic> json) {
@@ -41,6 +45,8 @@ class ProviderConfig {
       maxTurns: (json['max_turns'] as num?)?.toInt(),
       maxStuckIterations: (json['max_stuck_iterations'] as num?)?.toInt(),
       hardIterationCap: (json['hard_iteration_cap'] as num?)?.toInt(),
+      thinkingLevel: json['thinking_level'] as String?,
+      supportsImages: json['supports_images'] as bool?,
     );
   }
 
@@ -54,6 +60,8 @@ class ProviderConfig {
     if (maxTurns != null) 'max_turns': maxTurns,
     if (maxStuckIterations != null) 'max_stuck_iterations': maxStuckIterations,
     if (hardIterationCap != null) 'hard_iteration_cap': hardIterationCap,
+    if (thinkingLevel != null) 'thinking_level': thinkingLevel,
+    if (supportsImages != null) 'supports_images': supportsImages,
   };
 }
 
@@ -79,6 +87,7 @@ class NibConfig {
   final int hardIterationCap;
   final Map<String, dynamic> keybindings;
   final String? searchProvider;
+  final String? thinkingLevel;
 
   NibConfig({
     this.defaultProvider = 'exllama',
@@ -92,6 +101,7 @@ class NibConfig {
     this.hardIterationCap = 200,
     Map<String, dynamic>? keybindings,
     this.searchProvider,
+    this.thinkingLevel,
   }) : providers = providers ?? {},
        keybindings = keybindings ?? {};
 
@@ -179,6 +189,7 @@ class NibConfig {
                 ? Map<String, dynamic>.from(json['keybindings'] as Map)
                 : null,
             searchProvider: json['search_provider'] as String?,
+            thinkingLevel: json['thinking_level'] as String?,
           );
         } catch (_) {
           // Try next candidate
@@ -320,6 +331,7 @@ class NibConfig {
       if (hardIterationCap != 200) 'hard_iteration_cap': hardIterationCap,
       if (keybindings.isNotEmpty) 'keybindings': keybindings,
       if (searchProvider != null) 'search_provider': searchProvider,
+      if (thinkingLevel != null) 'thinking_level': thinkingLevel,
       'providers': providers.map((k, v) => MapEntry(k, v.toJson())),
     };
 

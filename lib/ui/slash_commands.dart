@@ -6,7 +6,9 @@ import '../agent/compaction.dart';
 import '../agent/config.dart';
 import '../agent/session.dart';
 import '../agent/skills.dart';
+import '../agent/thinking_level.dart';
 import '../agent/undo_manager.dart';
+import '../ai/image_attachment.dart';
 import '../ai/mock_provider.dart';
 import '../ai/openai_provider.dart';
 import 'ansi.dart';
@@ -25,6 +27,9 @@ class SlashCommandHandler {
   /// skill marked `disable-model-invocation`, which the model cannot load itself.
   String? pendingInvocation;
 
+  /// Images attached via `/image` waiting to be attached to the next turn.
+  final List<ImageAttachment> pendingImages = [];
+
   SlashCommandHandler(this.agent, [this.config]);
 
   /// Returns true if input was a slash command and handled.
@@ -41,6 +46,14 @@ class SlashCommandHandler {
     switch (cmd) {
       case '/help':
         _showHelp();
+        return true;
+
+      case '/thinking':
+        _handleThinking(args);
+        return true;
+
+      case '/image':
+        await _handleImage(args);
         return true;
 
       case '/clear':
@@ -134,6 +147,12 @@ class SlashCommandHandler {
       '  ${Ansi.cyanText('/help')}             Show this help message',
     );
     stdout.writeln(
+      '  ${Ansi.cyanText('/thinking [level]')} Inspect or change thinking level ladder (off..max)',
+    );
+    stdout.writeln(
+      '  ${Ansi.cyanText('/image [path]')}     Attach image from path or clipboard into next prompt',
+    );
+    stdout.writeln(
       '  ${Ansi.cyanText('/undo')}             Revert the last file change made by Nib',
     );
     stdout.writeln(
@@ -183,6 +202,7 @@ class SlashCommandHandler {
     stdout.writeln(Ansi.boldText('Keys'));
     final keys = [
       ('Esc / Ctrl+C', 'stop the turn; your draft is kept'),
+      ('Shift+Tab', 'cycle thinking level ladder (off..max)'),
       ('alt+enter', 'queue what you typed while a turn runs'),
       ('enter', 'on an empty line, send the queued message'),
       ('ctrl+j', 'newline instead of sending'),
@@ -478,12 +498,88 @@ class SlashCommandHandler {
     if (mutated) await SkillsManager.instance.saveOverrides();
   }
 
+  void _handleThinking(List<String> args) {
+    if (args.isEmpty) {
+      stdout.writeln();
+      stdout.writeln(Ansi.boldText('Thinking Level Configuration:'));
+      stdout.writeln(
+        '  Current Level: ${Ansi.cyanText(agent.thinkingLevel.label)}',
+      );
+      stdout.writeln(
+        '  Ladder:        ${ThinkingLevel.values.map((l) => l == agent.thinkingLevel ? Ansi.cyanText('[${l.label}]') : l.label).join(' · ')}',
+      );
+      stdout.writeln(
+        '  Shortcut:      Shift+Tab cycles live during prompting.',
+      );
+      stdout.writeln();
+      return;
+    }
+    try {
+      final level = ThinkingLevel.parse(args[0]);
+      agent.thinkingLevel = level;
+      stdout.writeln(
+        Ansi.greenText('  ✔ Thinking level set to "${level.label}".'),
+      );
+    } catch (e) {
+      stdout.writeln(Ansi.redText('  ✖ $e'));
+    }
+  }
+
+  Future<void> _handleImage(List<String> args) async {
+    if (args.isEmpty) {
+      stdout.writeln(Ansi.grayText('  Checking clipboard for image...'));
+      final clip = await ImageAttachment.fromClipboard();
+      if (clip != null) {
+        pendingImages.add(clip);
+        stdout.writeln(
+          Ansi.greenText(
+            '  ✔ Grabbed image from clipboard (${clip.width}x${clip.height}, ${clip.mimeType}). It will be included with your next prompt.',
+          ),
+        );
+      } else {
+        stdout.writeln(
+          Ansi.yellowText(
+            '  ✖ No image found in clipboard. Use: /image <file-path> or mention @image.png (Tier 3).',
+          ),
+        );
+      }
+      return;
+    }
+
+    final rawPath = args.join(' ');
+    final file = File(rawPath);
+    if (!await file.exists()) {
+      stdout.writeln(Ansi.redText('  ✖ File "$rawPath" does not exist.'));
+      return;
+    }
+
+    final attachment = await ImageAttachment.fromFile(file);
+    if (attachment == null) {
+      stdout.writeln(
+        Ansi.redText(
+          '  ✖ Could not decode "$rawPath" as a valid image (PNG, JPEG, GIF, WEBP, BMP supported).',
+        ),
+      );
+      return;
+    }
+
+    pendingImages.add(attachment);
+    stdout.writeln(
+      Ansi.greenText(
+        '  ✔ Attached image: $rawPath (${attachment.width}x${attachment.height}, ${attachment.mimeType}). It will be included with your next prompt.',
+      ),
+    );
+  }
+
   void _showConfig() {
     stdout.writeln();
     stdout.writeln(Ansi.boldText('Nib Configuration:'));
     stdout.writeln('  Active Provider:  ${Ansi.cyanText(agent.provider.name)}');
     stdout.writeln(
       '  Active Model:     ${Ansi.brightCyanText(agent.provider.model)}',
+    );
+    stdout.writeln(
+      '  Thinking Level:   ${Ansi.magentaText(agent.thinkingLevel.label)}',
     );
     if (agent.provider is OpenAiProvider) {
       final oai = agent.provider as OpenAiProvider;

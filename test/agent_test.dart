@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:nib/agent/agent.dart';
 import 'package:nib/agent/session.dart';
+import 'package:nib/agent/thinking_level.dart';
 import 'package:nib/agent/tool.dart';
 import 'package:nib/ai/chat_message.dart';
 import 'package:nib/ai/event_stream.dart';
@@ -297,6 +298,7 @@ class _AlternatingToolProvider implements LLMProvider {
     required List<AgentTool> tools,
     double? temperature,
     int? maxTokens,
+    ThinkingLevel? thinkingLevel,
   }) async* {
     if (_issued++ >= _limit) {
       yield TextDeltaEvent('done');
@@ -334,6 +336,7 @@ class _RepeatingToolProvider implements LLMProvider {
     required List<AgentTool> tools,
     double? temperature,
     int? maxTokens,
+    ThinkingLevel? thinkingLevel,
   }) async* {
     if (_issued++ >= _limit) {
       yield TextDeltaEvent('done');
