@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:nib/agent/compaction.dart';
 import 'package:nib/agent/session.dart';
 import 'package:nib/ai/chat_message.dart';
@@ -5,6 +6,24 @@ import 'package:nib/ai/mock_provider.dart';
 import 'package:test/test.dart';
 
 void main() {
+  late Directory testSessionsDir;
+
+  setUp(() {
+    testSessionsDir = Directory.systemTemp.createTempSync(
+      'nib_compaction_test_sess_',
+    );
+    AgentSession.storageDirectoryOverride = testSessionsDir.path;
+  });
+
+  tearDown(() {
+    AgentSession.storageDirectoryOverride = null;
+    try {
+      if (testSessionsDir.existsSync()) {
+        testSessionsDir.deleteSync(recursive: true);
+      }
+    } catch (_) {}
+  });
+
   group('Tau-Style Compaction Test', () {
     test('estimateTokens calculates approximate token counts', () {
       final messages = [

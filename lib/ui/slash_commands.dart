@@ -194,9 +194,6 @@ class SlashCommandHandler {
     stdout.writeln(
       '  ${Ansi.cyanText('/clear')}            Clear conversation history',
     );
-    stdout.writeln(
-      '  ${Ansi.cyanText('/mock')}             Switch to offline MockProvider',
-    );
     stdout.writeln('  ${Ansi.cyanText('/exit')}             Exit the CLI');
     stdout.writeln();
     stdout.writeln(Ansi.boldText('Keys'));

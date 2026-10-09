@@ -24,9 +24,9 @@ void main() {
 
     test('defaults keep the tool loop unbounded', () async {
       await writeConfig({
-        'default_provider': 'exllama',
+        'default_provider': 'primary',
         'providers': {
-          'exllama': {'model': 'm', 'base_url': 'http://localhost:5000/v1'},
+          'primary': {'model': 'm', 'base_url': 'https://api.openai.com/v1'},
         },
       });
 
@@ -43,7 +43,7 @@ void main() {
       'top-level context window and ceilings are read from the file',
       () async {
         await writeConfig({
-          'default_provider': 'exllama',
+          'default_provider': 'primary',
           'context_window': 262144,
           'max_tokens': 16384,
           'max_turns': 40,
@@ -65,11 +65,11 @@ void main() {
 
     test('the active provider overrides the top-level values', () async {
       await writeConfig({
-        'default_provider': 'exllama',
+        'default_provider': 'primary',
         'context_window': 32768,
         'max_stuck_iterations': 5,
         'providers': {
-          'exllama': {
+          'primary': {
             'model': 'big',
             'context_window': 262144,
             'max_tokens': 16384,
@@ -82,7 +82,7 @@ void main() {
       final config = await NibConfig.load(
         customPath: p.join(tempDir.path, 'config.json'),
       );
-      final ex = config.providers['exllama']!;
+      final ex = config.providers['primary']!;
       expect(ex.contextWindow, 262144);
       expect(ex.maxStuckIterations, 12);
       // Unset provider values fall through to the top level.
@@ -92,14 +92,14 @@ void main() {
 
     test('round-trips through save() without losing the ceilings', () async {
       final config = NibConfig(
-        defaultProvider: 'exllama',
+        defaultProvider: 'primary',
         contextWindow: 262144,
         maxStuckIterations: 7,
         providers: {
-          'exllama': ProviderConfig(
-            name: 'exllama',
+          'primary': ProviderConfig(
+            name: 'primary',
             model: 'm',
-            baseUrl: 'http://localhost:5000/v1',
+            baseUrl: 'https://api.openai.com/v1',
             apiKey: '',
             contextWindow: 262144,
             hardIterationCap: 300,
@@ -111,8 +111,26 @@ void main() {
 
       final reloaded = await NibConfig.load(customPath: path);
       expect(reloaded.maxStuckIterations, 7);
-      expect(reloaded.providers['exllama']!.hardIterationCap, 300);
-      expect(reloaded.providers['exllama']!.contextWindow, 262144);
+      expect(reloaded.providers['primary']!.hardIterationCap, 300);
+      expect(reloaded.providers['primary']!.contextWindow, 262144);
     });
+
+    test(
+      'no-config load does not synthesize exllama or localhost:5000',
+      () async {
+        final nonExistentPath = p.join(
+          tempDir.path,
+          'no_such_dir',
+          'config.json',
+        );
+        final config = await NibConfig.load(customPath: nonExistentPath);
+
+        expect(config.providers.containsKey('exllama'), isFalse);
+        for (final p in config.providers.values) {
+          expect(p.baseUrl, isNot(contains(':5000')));
+          expect(p.model, isNot(contains('Qwen3.8-Flash-Next-exl3')));
+        }
+      },
+    );
   });
 }

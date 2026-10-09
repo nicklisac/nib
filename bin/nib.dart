@@ -30,20 +30,17 @@ void main(List<String> arguments) async {
     ..addOption(
       'config',
       abbr: 'c',
-      help:
-          'Custom config file path (default: ~/.nib/config.json with ~/.tart / ~/.tau fallback).',
+      help: 'Custom config file path (default: ~/.nib/config.json).',
     )
     ..addOption(
       'provider',
       abbr: 'p',
-      help:
-          'LLM provider (e.g. exllama, unsloth, openai, anthropic, ollama, mock).',
+      help: 'LLM provider (e.g. anthropic, openai, openrouter, ollama, mock).',
     )
     ..addOption(
       'model',
       abbr: 'm',
-      help:
-          'Model name (e.g. Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6, gpt-4o).',
+      help: 'Model name (e.g. claude-3-7-sonnet-20250219, gpt-4o, llama3.1).',
     )
     ..addOption(
       'theme',
@@ -64,8 +61,7 @@ void main(List<String> arguments) async {
     )
     ..addOption(
       'base-url',
-      help:
-          'Custom API base URL (e.g. http://localhost:5000/v1 for tabbyAPI/exllama).',
+      help: 'Custom API base URL (e.g. http://localhost:11434/v1 for Ollama).',
     )
     ..addFlag(
       'resume',
@@ -137,15 +133,11 @@ void main(List<String> arguments) async {
   if (providerId == 'mock') {
     provider = MockProvider();
   } else if (config.providers.containsKey(providerId)) {
-    // Configured provider profile (e.g. exllama / unsloth from ~/.nib, ~/.tart, or ~/.tau)
+    // Configured provider profile from ~/.nib/config.json
     final provConf = config.providers[providerId]!;
     final model = explicitModel ?? provConf.model;
     final baseUrl = explicitBaseUrl ?? provConf.baseUrl;
-    final apiKey =
-        explicitKey ??
-        (provConf.apiKey.isNotEmpty
-            ? provConf.apiKey
-            : env['EXLLAMA_API_KEY'] ?? '');
+    final apiKey = explicitKey ?? provConf.apiKey;
 
     provider = OpenAiProvider(
       name: provConf.name,
@@ -156,14 +148,14 @@ void main(List<String> arguments) async {
   } else if (providerId == 'anthropic') {
     final key = explicitKey ?? env['ANTHROPIC_API_KEY'] ?? '';
     provider = AnthropicProvider(
-      model: explicitModel ?? 'claude-3-5-sonnet-20241022',
+      model: explicitModel ?? 'claude-3-7-sonnet-20250219',
       apiKey: key,
       baseUrl: explicitBaseUrl,
     );
   } else if (providerId == 'ollama') {
     provider = OpenAiProvider(
       name: 'Ollama (Local)',
-      model: explicitModel ?? 'llama3',
+      model: explicitModel ?? 'llama3.1',
       apiKey: 'ollama',
       baseUrl: explicitBaseUrl ?? 'http://localhost:11434/v1',
     );
@@ -171,12 +163,11 @@ void main(List<String> arguments) async {
     final key = explicitKey ?? env['OPENROUTER_API_KEY'] ?? '';
     provider = OpenAiProvider(
       name: 'OpenRouter',
-      model: explicitModel ?? 'anthropic/claude-3.5-sonnet',
+      model: explicitModel ?? 'anthropic/claude-3.7-sonnet',
       apiKey: key,
       baseUrl: explicitBaseUrl ?? 'https://openrouter.ai/api/v1',
     );
-  } else {
-    // OpenAI or Generic OpenAI-compatible
+  } else if (providerId == 'openai') {
     final key = explicitKey ?? env['OPENAI_API_KEY'] ?? '';
     provider = OpenAiProvider(
       name: 'OpenAI',
@@ -184,6 +175,66 @@ void main(List<String> arguments) async {
       apiKey: key,
       baseUrl: explicitBaseUrl,
     );
+  } else {
+    // Generic OpenAI-compatible fallback
+    final key = explicitKey ?? env['OPENAI_API_KEY'] ?? '';
+    provider = OpenAiProvider(
+      name: 'OpenAI',
+      model: explicitModel ?? config.defaultModel ?? 'gpt-4o',
+      apiKey: key,
+      baseUrl: explicitBaseUrl,
+    );
+  }
+
+  // Check whether a usable provider or credentials exist
+  final hasKey = switch (provider) {
+    AnthropicProvider a => a.apiKey.isNotEmpty,
+    OpenAiProvider o =>
+      o.apiKey.isNotEmpty ||
+          (o.baseUrl.contains('localhost') || o.baseUrl.contains('127.0.0.1')),
+    MockProvider _ => true,
+    _ => false,
+  };
+
+  if (!isMock && !hasKey) {
+    final theme = NibTheme.current;
+    stderr.writeln();
+    stderr.writeln(
+      '  ${theme.accent.text('╭── ✒   Welcome to NIB ──────────────────────────────────────────────')}',
+    );
+    stderr.writeln(
+      '  ${theme.muted.text('│')}   A minimalist terminal coding agent written entirely in Dart.',
+    );
+    stderr.writeln(
+      '  ${theme.accent.text('╰───────────────────────────────────────────────────────────────────')}',
+    );
+    stderr.writeln();
+    stderr.writeln(
+      '  ${theme.warning.text('No AI provider or API key configured.')}',
+    );
+    stderr.writeln();
+    stderr.writeln('  To use Nib, set an API key in your environment:');
+    stderr.writeln(
+      '    ${theme.secondary.text('export ANTHROPIC_API_KEY="sk-ant-..."')}   # Anthropic Claude',
+    );
+    stderr.writeln(
+      '    ${theme.secondary.text('export OPENAI_API_KEY="sk-..."')}          # OpenAI',
+    );
+    stderr.writeln(
+      '    ${theme.secondary.text('export OPENROUTER_API_KEY="sk-or-..."')}   # OpenRouter',
+    );
+    stderr.writeln();
+    stderr.writeln(
+      '  Or configure ~/.nib/config.json with a local server (e.g. Ollama):',
+    );
+    stderr.writeln(
+      '    ${theme.muted.text('./nib --provider ollama --model llama3.1')}',
+    );
+    stderr.writeln();
+    stderr.writeln('  To run in offline demo mode without an API key:');
+    stderr.writeln('    ${theme.success.text('./nib --mock')}');
+    stderr.writeln();
+    exit(1);
   }
 
   // Resume or start session

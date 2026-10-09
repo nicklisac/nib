@@ -90,7 +90,6 @@ class AutoCompleter {
       'Clear terminal screen and redraw status bar',
       '/clear',
     ),
-    SlashCommandInfo('/mock', 'Switch to offline mock provider', '/mock'),
     SlashCommandInfo(
       '/help',
       'Show help documentation and keybindings',

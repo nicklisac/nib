@@ -13,6 +13,24 @@ import 'package:nib/tools/list_dir_tool.dart';
 import 'package:nib/tools/read_file_tool.dart';
 
 void main() {
+  late Directory testSessionsDir;
+
+  setUp(() {
+    testSessionsDir = Directory.systemTemp.createTempSync(
+      'nib_agent_test_sess_',
+    );
+    AgentSession.storageDirectoryOverride = testSessionsDir.path;
+  });
+
+  tearDown(() {
+    AgentSession.storageDirectoryOverride = null;
+    try {
+      if (testSessionsDir.existsSync()) {
+        testSessionsDir.deleteSync(recursive: true);
+      }
+    } catch (_) {}
+  });
+
   group('Agent & Session Loop Test', () {
     test('Session manages messages and usage counters', () {
       final session = AgentSession();

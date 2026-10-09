@@ -90,7 +90,7 @@ class NibConfig {
   final String? thinkingLevel;
 
   NibConfig({
-    this.defaultProvider = 'exllama',
+    this.defaultProvider = 'auto',
     this.defaultModel,
     Map<String, ProviderConfig>? providers,
     this.systemPromptAppend,
@@ -134,16 +134,19 @@ class NibConfig {
     return null;
   }
 
-  /// Loads configuration from ~/.nib/config.json or falls back to ~/.tart or ~/.tau.
+  /// Loads configuration from custom path, workspace `.nib/config.json`, or `~/.nib/config.json`.
+  /// If no file exists, auto-detects standard environment variables.
   static Future<NibConfig> load({String? customPath}) async {
     final home = Platform.environment['HOME'] ?? '';
+    final env = Platform.environment;
 
     // Candidate configuration paths in priority order
-    final candidates = <String>[
-      ?customPath,
-      if (home.isNotEmpty) p.join(home, '.nib', 'config.json'),
-      if (home.isNotEmpty) p.join(home, '.tart', 'config.json'),
-    ];
+    final candidates = customPath != null
+        ? <String>[customPath]
+        : <String>[
+            p.join(Directory.current.path, '.nib', 'config.json'),
+            if (home.isNotEmpty) p.join(home, '.nib', 'config.json'),
+          ];
 
     for (final configPath in candidates) {
       if (await File(configPath).exists()) {
@@ -173,8 +176,12 @@ class NibConfig {
             appendPrompt = await appendFile.readAsString();
           }
 
+          final defProvider =
+              json['default_provider'] as String? ??
+              (providersMap.isNotEmpty ? providersMap.keys.first : 'auto');
+
           return NibConfig(
-            defaultProvider: json['default_provider'] as String? ?? 'exllama',
+            defaultProvider: defProvider,
             defaultModel: json['default_model'] as String?,
             providers: providersMap,
             systemPromptAppend: appendPrompt,
@@ -197,120 +204,63 @@ class NibConfig {
       }
     }
 
-    // Fallback from ~/.tau
-    return await _loadFromTauFallback(home);
-  }
+    // No config file found: auto-detect standard provider environment variables
+    final autoProviders = <String, ProviderConfig>{};
+    String? detectedDefault;
 
-  static Future<TartConfig> _loadFromTauFallback(String home) async {
-    final providers = <String, ProviderConfig>{};
-    String defaultProvider = 'exllama';
-    String? defaultModel = 'Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6';
-    String? appendPrompt;
-    Map<String, dynamic>? keybindings;
-
-    final tauDir = p.join(home, '.tau');
-    if (await Directory(tauDir).exists()) {
-      // Read credentials
-      final credsFile = File(p.join(tauDir, 'credentials.json'));
-      final creds = <String, String>{};
-      if (await credsFile.exists()) {
-        try {
-          final rawCreds =
-              jsonDecode(await credsFile.readAsString())
-                  as Map<String, dynamic>;
-          for (final e in rawCreds.entries) {
-            if (e.value is String) creds[e.key] = e.value as String;
-          }
-        } catch (_) {}
-      }
-
-      // Read config.toml manually for providers
-      final configFile = File(p.join(tauDir, 'config.toml'));
-      if (await configFile.exists()) {
-        try {
-          final lines = await configFile.readAsLines();
-          String? currentSection;
-          final sectionMaps = <String, Map<String, String>>{};
-
-          for (final line in lines) {
-            final trimmed = line.trim();
-            if (trimmed.startsWith('#') || trimmed.isEmpty) continue;
-
-            if (trimmed.startsWith('[providers.') && trimmed.endsWith(']')) {
-              currentSection = trimmed.substring(11, trimmed.length - 1);
-              sectionMaps[currentSection] = {};
-            } else if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-              currentSection = null;
-            } else if (trimmed.contains('=')) {
-              final idx = trimmed.indexOf('=');
-              final key = trimmed.substring(0, idx).trim();
-              var val = trimmed.substring(idx + 1).trim();
-              if (val.startsWith('"') && val.endsWith('"')) {
-                val = val.substring(1, val.length - 1);
-              }
-              if (currentSection != null) {
-                sectionMaps[currentSection]?[key] = val;
-              } else if (key == 'default_provider') {
-                defaultProvider = val;
-              } else if (key == 'default_model') {
-                defaultModel = val;
-              }
-            }
-          }
-
-          for (final entry in sectionMaps.entries) {
-            final pName = entry.key;
-            final pMap = entry.value;
-            final m = pMap['model'] ?? defaultModel ?? 'default';
-            final url = pMap['base_url'] ?? 'http://localhost:5000/v1';
-            final apiKey = creds[pName] ?? '';
-            providers[pName] = ProviderConfig(
-              name: pName,
-              model: m,
-              baseUrl: url,
-              apiKey: apiKey,
-            );
-          }
-        } catch (_) {}
-      }
-
-      // Check APPEND_SYSTEM.md
-      final appendFile = File(p.join(tauDir, 'APPEND_SYSTEM.md'));
-      if (await appendFile.exists()) {
-        appendPrompt = await appendFile.readAsString();
-      }
-
-      // Check tui.json for keybindings
-      final tuiFile = File(p.join(tauDir, 'tui.json'));
-      if (await tuiFile.exists()) {
-        try {
-          final tuiJson =
-              jsonDecode(await tuiFile.readAsString()) as Map<String, dynamic>;
-          if (tuiJson['keybindings'] is Map) {
-            keybindings = Map<String, dynamic>.from(
-              tuiJson['keybindings'] as Map,
-            );
-          }
-        } catch (_) {}
-      }
+    if (env['ANTHROPIC_API_KEY']?.isNotEmpty == true) {
+      autoProviders['anthropic'] = ProviderConfig(
+        name: 'anthropic',
+        model: 'claude-3-7-sonnet-20250219',
+        baseUrl: 'https://api.anthropic.com',
+        apiKey: env['ANTHROPIC_API_KEY']!,
+      );
+      detectedDefault ??= 'anthropic';
     }
 
-    // Default exllama profile if none parsed
-    if (!providers.containsKey('exllama')) {
-      providers['exllama'] = ProviderConfig(
-        name: 'exllama',
-        model: 'Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6',
-        baseUrl: 'http://localhost:5000/v1',
-        apiKey: 'exl3-key',
+    if (env['OPENAI_API_KEY']?.isNotEmpty == true) {
+      autoProviders['openai'] = ProviderConfig(
+        name: 'openai',
+        model: 'gpt-4o',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: env['OPENAI_API_KEY']!,
       );
+      detectedDefault ??= 'openai';
+    }
+
+    if (env['OPENROUTER_API_KEY']?.isNotEmpty == true) {
+      autoProviders['openrouter'] = ProviderConfig(
+        name: 'openrouter',
+        model: 'anthropic/claude-3.7-sonnet',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKey: env['OPENROUTER_API_KEY']!,
+      );
+      detectedDefault ??= 'openrouter';
+    }
+
+    if (env['GEMINI_API_KEY']?.isNotEmpty == true) {
+      autoProviders['gemini'] = ProviderConfig(
+        name: 'gemini',
+        model: 'gemini-2.5-flash',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        apiKey: env['GEMINI_API_KEY']!,
+      );
+      detectedDefault ??= 'gemini';
+    }
+
+    if (env.containsKey('OLLAMA_BASE_URL') || env.containsKey('OLLAMA_MODEL')) {
+      autoProviders['ollama'] = ProviderConfig(
+        name: 'ollama',
+        model: env['OLLAMA_MODEL'] ?? 'llama3.1',
+        baseUrl: env['OLLAMA_BASE_URL'] ?? 'http://localhost:11434/v1',
+        apiKey: 'ollama',
+      );
+      detectedDefault ??= 'ollama';
     }
 
     return NibConfig(
-      defaultProvider: defaultProvider,
-      defaultModel: defaultModel,
-      providers: providers,
-      systemPromptAppend: appendPrompt,
-      keybindings: keybindings,
+      defaultProvider: detectedDefault ?? 'none',
+      providers: autoProviders,
     );
   }
 
@@ -339,5 +289,3 @@ class NibConfig {
     await file.writeAsString(encoder.convert(map));
   }
 }
-
-typedef TartConfig = NibConfig;

@@ -58,8 +58,12 @@ class AgentSession {
   /// Optional override for the session storage directory (primarily for testing).
   static String? storageDirectoryOverride;
 
+  /// Global switch: if false, session disk saving is completely bypassed (useful in tests).
+  static bool enableDiskPersistence = true;
+
   /// Automatically persists session transcript to `~/.nib/sessions/<id>.jsonl`
   Future<void> saveToDisk() async {
+    if (!enableDiskPersistence) return;
     try {
       final String sessionDirPath;
       if (storageDirectoryOverride != null) {
@@ -101,7 +105,7 @@ class AgentSession {
     } catch (_) {}
   }
 
-  /// Loads a session from disk by its ID (checking ~/.nib/sessions/, ~/.tart/sessions/, ~/.tau/sessions/).
+  /// Loads a session from disk by its ID from `~/.nib/sessions/`.
   static Future<AgentSession?> loadFromDisk(String id) async {
     try {
       File? file;
@@ -118,14 +122,8 @@ class AgentSession {
         final home = Platform.environment['HOME'] ?? '';
         if (home.isEmpty) return null;
 
-        var candidate = File(p.join(home, '.nib', 'sessions', '$id.jsonl'));
-        if (!await candidate.exists()) {
-          candidate = File(p.join(home, '.tart', 'sessions', '$id.jsonl'));
-          if (!await candidate.exists()) {
-            candidate = File(p.join(home, '.tau', 'sessions', '$id.jsonl'));
-            if (!await candidate.exists()) return null;
-          }
-        }
+        final candidate = File(p.join(home, '.nib', 'sessions', '$id.jsonl'));
+        if (!await candidate.exists()) return null;
         file = candidate;
       }
 
@@ -158,7 +156,7 @@ class AgentSession {
     }
   }
 
-  /// Returns the most recent session ID from ~/.nib/sessions/, ~/.tart/sessions/, or ~/.tau/sessions/
+  /// Returns the most recent session ID from ~/.nib/sessions/
   static Future<String?> getMostRecentSessionId() async {
     try {
       final dirs = <Directory>[];
@@ -167,11 +165,7 @@ class AgentSession {
       } else {
         final home = Platform.environment['HOME'] ?? '';
         if (home.isEmpty) return null;
-        dirs.addAll([
-          Directory(p.join(home, '.nib', 'sessions')),
-          Directory(p.join(home, '.tart', 'sessions')),
-          Directory(p.join(home, '.tau', 'sessions')),
-        ]);
+        dirs.add(Directory(p.join(home, '.nib', 'sessions')));
       }
 
       final files = <File>[];
@@ -205,11 +199,7 @@ class AgentSession {
       } else {
         final home = Platform.environment['HOME'] ?? '';
         if (home.isEmpty) return list;
-        dirs.addAll([
-          Directory(p.join(home, '.nib', 'sessions')),
-          Directory(p.join(home, '.tart', 'sessions')),
-          Directory(p.join(home, '.tau', 'sessions')),
-        ]);
+        dirs.add(Directory(p.join(home, '.nib', 'sessions')));
       }
 
       final seenIds = <String>{};

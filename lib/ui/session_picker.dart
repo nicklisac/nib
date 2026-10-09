@@ -15,9 +15,7 @@ class SessionPicker {
     if (sessions.isEmpty) {
       final theme = NibTheme.current;
       stdout.writeln(
-        theme.warning.text(
-          '  No saved sessions found across ~/.nib/sessions or ~/.tau/sessions.',
-        ),
+        theme.warning.text('  No saved sessions found in ~/.nib/sessions.'),
       );
       return null;
     }
