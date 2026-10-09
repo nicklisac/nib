@@ -3,7 +3,6 @@ import 'package:path/path.dart' as p;
 import '../agent/approval_manager.dart';
 import '../agent/tool.dart';
 import '../agent/undo_manager.dart';
-import '../ui/diff_formatter.dart';
 
 /// Tool for precise search-and-replace edits inside files.
 class EditFileTool extends AgentTool {
@@ -114,14 +113,7 @@ class EditFileTool extends AgentTool {
         contentAfter: newText,
       );
 
-      final diff = DiffFormatter.formatDiff(targetContent, replacementContent);
-      final buffer = StringBuffer();
-      buffer.writeln('Successfully updated "$rawPath":');
-      for (final line in diff) {
-        buffer.writeln('  $line');
-      }
-
-      return buffer.toString().trimRight();
+      return 'Successfully updated "$rawPath".';
     } catch (e) {
       return 'Error editing file "$rawPath": $e';
     }

@@ -1,4 +1,3 @@
-import 'package:diffutil_dart/diffutil.dart' as diffutil;
 import 'ansi.dart';
 
 /// Utility to generate and highlight unified diffs for terminal display.
@@ -60,53 +59,80 @@ class DiffFormatter {
       return a.map((l) => _DiffItem(_DiffType.deletion, l)).toList();
     }
 
-    final result = diffutil.calculateListDiff(a, b, detectMoves: false);
-    final updates = result.getUpdatesWithData().toList();
+    // Standard Myers LCS / edit script algorithm
+    final n = a.length;
+    final m = b.length;
+    final max = n + m;
+    final v = <int, int>{1: 0};
+    final trace = <Map<int, int>>[];
 
-    final removedOldIndices = <int>{};
-    for (final u in updates) {
-      if (u is diffutil.DataRemove<String>) {
-        removedOldIndices.add(u.position);
+    for (int d = 0; d <= max; d++) {
+      trace.add(Map<int, int>.from(v));
+      bool found = false;
+      for (int k = -d; k <= d; k += 2) {
+        int x;
+        if (k == -d || (k != d && (v[k - 1] ?? 0) < (v[k + 1] ?? 0))) {
+          x = v[k + 1] ?? 0;
+        } else {
+          x = (v[k - 1] ?? 0) + 1;
+        }
+        int y = x - k;
+
+        while (x < n && y < m && a[x] == b[y]) {
+          x++;
+          y++;
+        }
+        v[k] = x;
+
+        if (x >= n && y >= m) {
+          found = true;
+          break;
+        }
       }
+      if (found) break;
     }
 
-    final insertedNewIndices = <int, String>{};
-    for (final u in updates) {
-      if (u is diffutil.DataInsert<String>) {
-        insertedNewIndices[u.position] = u.data;
-      }
-    }
-
+    // Backtrack to build the diff
     final items = <_DiffItem>[];
-    int oldIdx = 0;
-    int newIdx = 0;
+    int x = n;
+    int y = m;
 
-    while (oldIdx < a.length || newIdx < b.length) {
-      // 1. Deletion from old lines
-      if (oldIdx < a.length &&
-          (removedOldIndices.contains(oldIdx) || newIdx >= b.length)) {
-        items.add(_DiffItem(_DiffType.deletion, a[oldIdx]));
-        oldIdx++;
-        continue;
+    for (int d = trace.length - 1; d > 0; d--) {
+      final prevV = trace[d];
+      final k = x - y;
+      int prevK;
+      if (k == -d || (k != d && (prevV[k - 1] ?? 0) < (prevV[k + 1] ?? 0))) {
+        prevK = k + 1;
+      } else {
+        prevK = k - 1;
+      }
+      final prevX = prevV[prevK] ?? 0;
+      final prevY = prevX - prevK;
+
+      while (x > prevX && y > prevY) {
+        x--;
+        y--;
+        items.add(_DiffItem(_DiffType.context, a[x]));
       }
 
-      // 2. Addition from new lines
-      if (newIdx < b.length &&
-          (insertedNewIndices.containsKey(newIdx) || oldIdx >= a.length)) {
-        items.add(_DiffItem(_DiffType.addition, b[newIdx]));
-        newIdx++;
-        continue;
-      }
-
-      // 3. Matching context lines
-      if (oldIdx < a.length && newIdx < b.length) {
-        items.add(_DiffItem(_DiffType.context, a[oldIdx]));
-        oldIdx++;
-        newIdx++;
+      if (d > 0) {
+        if (x == prevX) {
+          y--;
+          items.add(_DiffItem(_DiffType.addition, b[y]));
+        } else if (y == prevY) {
+          x--;
+          items.add(_DiffItem(_DiffType.deletion, a[x]));
+        }
       }
     }
 
-    return items;
+    while (x > 0 && y > 0) {
+      x--;
+      y--;
+      items.add(_DiffItem(_DiffType.context, a[x]));
+    }
+
+    return items.reversed.toList();
   }
 }
 

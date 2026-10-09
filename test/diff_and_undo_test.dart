@@ -46,8 +46,7 @@ void main() {
         'replacement_content': 'Modified text',
       });
 
-      expect(editRes, contains('Modified text'));
-      expect(editRes, contains('+'));
+      expect(editRes, equals('Successfully updated "sample.txt".'));
 
       final current = await File('${tempDir.path}/sample.txt').readAsString();
       expect(current, contains('Modified text'));
