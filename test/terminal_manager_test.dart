@@ -40,8 +40,14 @@ void main() {
     );
 
     test('decodes control characters (Enter, Tab, Backspace, Esc, Ctrl+C)', () {
-      final enter = KeyDecoder.decode([10]);
+      // CR is Enter. LF keeps its own byte as ctrlJ, which is what makes
+      // ctrl+enter-vs-newline addressable at all; raw mode already clears ICRNL,
+      // so the old collision was Nib's decoder rather than the terminal.
+      final enter = KeyDecoder.decode([13]);
       expect(enter.first.controlChar, equals(ControlCharacter.enter));
+
+      final ctrlJ = KeyDecoder.decode([10]);
+      expect(ctrlJ.first.controlChar, equals(ControlCharacter.ctrlJ));
 
       final tab = KeyDecoder.decode([9]);
       expect(tab.first.controlChar, equals(ControlCharacter.tab));
