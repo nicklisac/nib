@@ -137,7 +137,11 @@ class PromptReader {
     int cols,
   ) {
     final promptLen = visibleWidth(prompt);
-    final text = prompt + buffer.substring(0, to);
+    // The buffer only. The prompt contributes [promptLen] *visible* cells to the
+    // first line; the raw prompt must not be counted as well, because its SGR
+    // escape bytes are never printed and the cursor would land a whole prompt's
+    // worth of bytes to the right of the text.
+    final text = buffer.substring(0, to);
     final lines = text.split('\n');
     var row = 0;
     var col = 0;

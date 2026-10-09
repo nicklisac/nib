@@ -195,20 +195,27 @@ class AmbientLine {
     _render();
   }
 
-  /// Clears the row. Call before any write that does not end with a newline, so
-  /// the stream is never painted over.
-  void suspendForInlineWrite() {
+  /// Call before a write that does not end with a newline, so the row is never
+  /// painted over.
+  void suspendForInlineWrite() => clearForTranscriptWrite();
+
+  /// Erases the row ahead of a transcript write, but keeps the row alive: the turn
+  /// is still running, so the next legal moment brings it back. [hide] is for when
+  /// the turn is over; using it mid-turn would leave the row missing for the rest
+  /// of the iteration.
+  ///
+  /// Clears *only when the ambient row is what is displayed there*. Once the cursor
+  /// is mid-line the row belongs to the transcript, and erasing it deletes the text
+  /// already written — streaming a token after a token would delete every token
+  /// before it and leave the whole line walking in from column 0. That is feel
+  /// doctrine rule 1, the rule this class exists to honour.
+  void clearForTranscriptWrite() {
+    _clearOwnRowIfDisplayed();
     _atRowStart = false;
-    if (_visible) _clearRow();
   }
 
-  /// Erases the row for a transcript line that is about to be written, but keeps
-  /// the row alive: the turn is still running, so the next legal moment brings it
-  /// back. [hide] is for when the turn is over; using it mid-turn would leave the
-  /// row missing for the rest of the iteration.
-  void clearForTranscriptWrite() {
-    _atRowStart = false;
-    if (_visible) _clearRow();
+  void _clearOwnRowIfDisplayed() {
+    if (_visible && _atRowStart) _clearRow();
   }
 
   /// Marks the cursor as sitting at the start of a fresh row, where drawing is
@@ -219,10 +226,12 @@ class AmbientLine {
   }
 
   void hide() {
+    // Same ownership rule: mid-line there is no row of ours to remove, and
+    // clearing would take transcript text with it.
+    _clearOwnRowIfDisplayed();
     _visible = false;
     _timer?.cancel();
     _timer = null;
-    _clearRow();
   }
 
   void _show() {

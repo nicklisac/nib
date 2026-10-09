@@ -239,6 +239,58 @@ void main() {
       expect(writes, isNotEmpty, reason: 'a fresh row is ours again');
     });
 
+    test('streaming token by token never erases the text already written', () {
+      // The failure this guards: clearing the row before *every* delta once the
+      // transcript owns the row deletes every token before it, so the line walks
+      // in from column 0 and reads as gibberish. Found by Nick immediately after
+      // the build shipped — the test above could not catch it because it cleared
+      // while the row was still legitimately the line's.
+      final writes = <String>[];
+      final agent = _testAgent();
+      final line = AmbientLine(
+        agent: agent,
+        meter: agent.meter,
+        out: writes.add,
+      );
+      line.startTurn();
+      writes.clear();
+
+      // Reproduce cli_ui's thought-delta path: first delta opens the row inline,
+      // every later delta appends to the same row the transcript now owns.
+      line.suspendForInlineWrite(); // before writing '  💭 '
+      // Six reasoning deltas arriving one after another onto the same row.
+      for (var i = 0; i < 6; i++) {
+        line.suspendForInlineWrite();
+      }
+
+      expect(
+        writes.where((w) => w == '\r\x1B[2K').length,
+        lessThanOrEqualTo(1),
+        reason:
+            'only the first suspend may clear; after that the row is the '
+            'transcript\'s and clearing it deletes streamed text',
+      );
+    });
+
+    test('hide mid-line does not clear transcript text', () {
+      final writes = <String>[];
+      final agent = _testAgent();
+      final line = AmbientLine(
+        agent: agent,
+        meter: agent.meter,
+        out: writes.add,
+      );
+      line.startTurn();
+      line.suspendForInlineWrite();
+      writes.clear();
+      line.hide();
+      expect(
+        writes,
+        isEmpty,
+        reason: 'mid-line there is no row of ours to remove',
+      );
+    });
+
     test('hide clears the row and stops the writer', () {
       final writes = <String>[];
       final agent = _testAgent();
@@ -306,6 +358,32 @@ void main() {
       final meter = ContextMeter(contextWindow: 1000);
       meter.recordPromptTokens(5000);
       expect(meter.percentFor(AgentSession(id: 'x')), equals(100));
+    });
+  });
+
+  group('Prompt cursor geometry', () {
+    test('a styled prompt is measured by visible cells, not raw bytes', () {
+      // The prompt Nib actually prints is 6 visible cells and 52 raw bytes. Counting
+      // both put the cursor 52 columns right of the text being typed.
+      const prompt =
+          '\x1B[38;2;137;180;250mnib\x1B[0m \x1B[38;2;203;166;247m❯\x1B[0m ';
+      expect(PromptReader.visibleWidth(prompt), equals(6));
+      expect(prompt.length, greaterThan(40));
+
+      final (row, col) = PromptReader.cursorPosition(prompt, 'hello', 5, 100);
+      expect((row, col), equals((0, 11)));
+    });
+
+    test('the cursor wraps to the next row at the width authority', () {
+      const prompt = 'nib ❯ ';
+      final (row, col) = PromptReader.cursorPosition(prompt, 'a' * 95, 95, 100);
+      expect((row, col), equals((1, 1)));
+    });
+
+    test('a hard newline inside the buffer advances a row', () {
+      const prompt = 'nib ❯ ';
+      final (row, col) = PromptReader.cursorPosition(prompt, 'ab\ncd', 5, 100);
+      expect((row, col), equals((1, 2)));
     });
   });
 
