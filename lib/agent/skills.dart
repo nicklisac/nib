@@ -70,7 +70,10 @@ class SkillsManager {
   Future<void> loadSkills({String? workspacePath}) async {
     _skills.clear();
     _workspacePath = workspacePath;
-    final home = Platform.environment['HOME'] ?? '';
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
     final seen = <String>{};
 
     final candidates = <({String dir, bool isWorkspace})>[

@@ -19,13 +19,17 @@ class BashTool extends AgentTool {
     try {
       final proc = _activeProcess;
       if (proc != null) {
-        proc.kill(ProcessSignal.sigterm);
-        _escalateTimer?.cancel();
-        _escalateTimer = Timer(const Duration(milliseconds: 500), () {
-          try {
-            proc.kill(ProcessSignal.sigkill);
-          } catch (_) {}
-        });
+        if (Platform.isWindows) {
+          proc.kill();
+        } else {
+          proc.kill(ProcessSignal.sigterm);
+          _escalateTimer?.cancel();
+          _escalateTimer = Timer(const Duration(milliseconds: 500), () {
+            try {
+              proc.kill(ProcessSignal.sigkill);
+            } catch (_) {}
+          });
+        }
       }
     } catch (_) {}
   }
@@ -69,9 +73,11 @@ class BashTool extends AgentTool {
     }
 
     try {
+      final shellExecutable = Platform.isWindows ? 'cmd.exe' : 'bash';
+      final shellArgs = Platform.isWindows ? ['/c', command] : ['-c', command];
       final process = await Process.start(
-        'bash',
-        ['-c', command],
+        shellExecutable,
+        shellArgs,
         workingDirectory: workingDirectory,
         runInShell: false,
       );
@@ -110,13 +116,17 @@ class BashTool extends AgentTool {
       final timer = Timer(Duration(seconds: timeoutSeconds), () {
         timedOut = true;
         try {
-          process.kill(ProcessSignal.sigterm);
-          _escalateTimer?.cancel();
-          _escalateTimer = Timer(const Duration(seconds: 2), () {
-            try {
-              process.kill(ProcessSignal.sigkill);
-            } catch (_) {}
-          });
+          if (Platform.isWindows) {
+            process.kill();
+          } else {
+            process.kill(ProcessSignal.sigterm);
+            _escalateTimer?.cancel();
+            _escalateTimer = Timer(const Duration(seconds: 2), () {
+              try {
+                process.kill(ProcessSignal.sigkill);
+              } catch (_) {}
+            });
+          }
         } catch (_) {}
       });
 

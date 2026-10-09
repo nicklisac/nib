@@ -1,0 +1,88 @@
+name: Build Multi-Platform Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to attach release assets to'
+        required: true
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            binary_name: nib
+          - os: macos-latest
+            target: macos-arm64
+            binary_name: nib
+          - os: macos-13
+            target: macos-x64
+            binary_name: nib
+          - os: windows-latest
+            target: windows-x64
+            binary_name: nib.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine release tag
+        id: vars
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v0.1.0" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Compile native executable
+        run: dart compile exe bin/nib.dart -o ${{ matrix.binary_name }}
+
+      - name: Package archive (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          TAG="${{ steps.vars.outputs.tag }}"
+          ARCHIVE="nib-${TAG}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE" ${{ matrix.binary_name }} README.md
+          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Package archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Tag = "${{ steps.vars.outputs.tag }}"
+          $Archive = "nib-$Tag-${{ matrix.target }}.zip"
+          Compress-Archive -Path ${{ matrix.binary_name }}, README.md -DestinationPath $Archive
+          $hash = (Get-FileHash -Path $Archive -Algorithm SHA256).Hash.ToLower()
+          "$hash  $Archive" | Out-File -Encoding ascii "$Archive.sha256"
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          files: |
+            nib-${{ steps.vars.outputs.tag }}-${{ matrix.target }}.*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

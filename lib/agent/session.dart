@@ -62,17 +62,20 @@ class AgentSession {
   static bool enableDiskPersistence = true;
 
   /// Automatically persists session transcript to `~/.nib/sessions/<id>.jsonl`
+  static String? get _defaultStorageDirectory {
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
+    return home.isNotEmpty ? p.join(home, '.nib', 'sessions') : null;
+  }
+
   Future<void> saveToDisk() async {
     if (!enableDiskPersistence) return;
     try {
-      final String sessionDirPath;
-      if (storageDirectoryOverride != null) {
-        sessionDirPath = storageDirectoryOverride!;
-      } else {
-        final home = Platform.environment['HOME'] ?? '';
-        if (home.isEmpty) return;
-        sessionDirPath = p.join(home, '.nib', 'sessions');
-      }
+      final String? sessionDirPath =
+          storageDirectoryOverride ?? _defaultStorageDirectory;
+      if (sessionDirPath == null) return;
 
       final sessionDir = Directory(sessionDirPath);
       if (!await sessionDir.exists()) {
@@ -119,10 +122,10 @@ class AgentSession {
       }
 
       if (file == null) {
-        final home = Platform.environment['HOME'] ?? '';
-        if (home.isEmpty) return null;
+        final storageDir = _defaultStorageDirectory;
+        if (storageDir == null) return null;
 
-        final candidate = File(p.join(home, '.nib', 'sessions', '$id.jsonl'));
+        final candidate = File(p.join(storageDir, '$id.jsonl'));
         if (!await candidate.exists()) return null;
         file = candidate;
       }
@@ -160,13 +163,9 @@ class AgentSession {
   static Future<String?> getMostRecentSessionId() async {
     try {
       final dirs = <Directory>[];
-      if (storageDirectoryOverride != null) {
-        dirs.add(Directory(storageDirectoryOverride!));
-      } else {
-        final home = Platform.environment['HOME'] ?? '';
-        if (home.isEmpty) return null;
-        dirs.add(Directory(p.join(home, '.nib', 'sessions')));
-      }
+      final targetDir = storageDirectoryOverride ?? _defaultStorageDirectory;
+      if (targetDir == null) return null;
+      dirs.add(Directory(targetDir));
 
       final files = <File>[];
       for (final sessionDir in dirs) {
@@ -194,13 +193,9 @@ class AgentSession {
     final list = <Map<String, dynamic>>[];
     try {
       final dirs = <Directory>[];
-      if (storageDirectoryOverride != null) {
-        dirs.add(Directory(storageDirectoryOverride!));
-      } else {
-        final home = Platform.environment['HOME'] ?? '';
-        if (home.isEmpty) return list;
-        dirs.add(Directory(p.join(home, '.nib', 'sessions')));
-      }
+      final targetDir = storageDirectoryOverride ?? _defaultStorageDirectory;
+      if (targetDir == null) return list;
+      dirs.add(Directory(targetDir));
 
       final seenIds = <String>{};
       final files = <File>[];

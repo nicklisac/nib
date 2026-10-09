@@ -137,7 +137,10 @@ class NibConfig {
   /// Loads configuration from custom path, workspace `.nib/config.json`, or `~/.nib/config.json`.
   /// If no file exists, auto-detects standard environment variables.
   static Future<NibConfig> load({String? customPath}) async {
-    final home = Platform.environment['HOME'] ?? '';
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
     final env = Platform.environment;
 
     // Candidate configuration paths in priority order
@@ -266,7 +269,10 @@ class NibConfig {
 
   /// Saves the current config to ~/.nib/config.json
   Future<void> save({String? customPath}) async {
-    final home = Platform.environment['HOME'] ?? '';
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
     final targetPath = customPath ?? p.join(home, '.nib', 'config.json');
     final file = File(targetPath);
     await file.parent.create(recursive: true);

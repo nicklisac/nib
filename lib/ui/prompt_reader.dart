@@ -102,7 +102,10 @@ class PromptReader {
 
   void _initHistoryFile() {
     try {
-      final home = Platform.environment['HOME'] ?? '';
+      final home =
+          Platform.environment['HOME'] ??
+          Platform.environment['USERPROFILE'] ??
+          '';
       if (home.isNotEmpty) {
         final dir = Directory(p.join(home, '.nib'));
         if (!dir.existsSync()) {
