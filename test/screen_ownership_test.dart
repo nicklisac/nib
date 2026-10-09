@@ -112,10 +112,27 @@ void main() {
       expect(keys.single.controlChar, equals(ControlCharacter.escape));
     });
 
-    test('shift+tab is consumed, not turned into Escape plus "[Z"', () {
-      final events = InputDecoder().add([27, 91, 90]);
-      expect(events, isEmpty);
-    });
+    test(
+      'shift+tab is decoded as shift+tab, not turned into Escape plus "[Z"',
+      () {
+        final events = InputDecoder().add([27, 91, 90]);
+        expect(
+          events.whereType<Key>().where((k) => !k.isControl).map((k) => k.char),
+          isEmpty,
+          reason: 'no fragment of an escape sequence may reach the buffer',
+        );
+        expect(
+          events.whereType<Key>().where(
+            (k) => k.isControl && k.controlChar == ControlCharacter.escape,
+          ),
+          isEmpty,
+          reason: 'shift+tab is not an escape interrupt',
+        );
+        final chords = events.whereType<AltKeyEvent>().toList();
+        expect(chords.length, equals(1));
+        expect(chords.single.label, equals('shift+tab'));
+      },
+    );
 
     test('alt+left is consumed, not typed into the prompt as "[1;3D"', () {
       final events = InputDecoder().add([27, 91, 49, 59, 51, 68]);

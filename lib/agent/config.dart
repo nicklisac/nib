@@ -77,6 +77,7 @@ class NibConfig {
   final int maxTurns;
   final int maxStuckIterations;
   final int hardIterationCap;
+  final Map<String, dynamic> keybindings;
 
   NibConfig({
     this.defaultProvider = 'exllama',
@@ -88,7 +89,9 @@ class NibConfig {
     this.maxTurns = 0,
     this.maxStuckIterations = 5,
     this.hardIterationCap = 200,
-  }) : providers = providers ?? {};
+    Map<String, dynamic>? keybindings,
+  }) : providers = providers ?? {},
+       keybindings = keybindings ?? {};
 
   /// Loads this repository's own instructions from AGENTS.md (or CLAUDE.md).
   ///
@@ -170,6 +173,9 @@ class NibConfig {
                 (json['max_stuck_iterations'] as num?)?.toInt() ?? 5,
             hardIterationCap:
                 (json['hard_iteration_cap'] as num?)?.toInt() ?? 200,
+            keybindings: json['keybindings'] is Map
+                ? Map<String, dynamic>.from(json['keybindings'] as Map)
+                : null,
           );
         } catch (_) {
           // Try next candidate
@@ -186,6 +192,7 @@ class NibConfig {
     String defaultProvider = 'exllama';
     String? defaultModel = 'Qwen3.8-Flash-Next-exl3-3.50bpw_hq_h6_ng6';
     String? appendPrompt;
+    Map<String, dynamic>? keybindings;
 
     final tauDir = p.join(home, '.tau');
     if (await Directory(tauDir).exists()) {
@@ -258,6 +265,20 @@ class NibConfig {
       if (await appendFile.exists()) {
         appendPrompt = await appendFile.readAsString();
       }
+
+      // Check tui.json for keybindings
+      final tuiFile = File(p.join(tauDir, 'tui.json'));
+      if (await tuiFile.exists()) {
+        try {
+          final tuiJson =
+              jsonDecode(await tuiFile.readAsString()) as Map<String, dynamic>;
+          if (tuiJson['keybindings'] is Map) {
+            keybindings = Map<String, dynamic>.from(
+              tuiJson['keybindings'] as Map,
+            );
+          }
+        } catch (_) {}
+      }
     }
 
     // Default exllama profile if none parsed
@@ -275,6 +296,7 @@ class NibConfig {
       defaultModel: defaultModel,
       providers: providers,
       systemPromptAppend: appendPrompt,
+      keybindings: keybindings,
     );
   }
 
@@ -293,6 +315,7 @@ class NibConfig {
       if (maxTurns != 0) 'max_turns': maxTurns,
       if (maxStuckIterations != 5) 'max_stuck_iterations': maxStuckIterations,
       if (hardIterationCap != 200) 'hard_iteration_cap': hardIterationCap,
+      if (keybindings.isNotEmpty) 'keybindings': keybindings,
       'providers': providers.map((k, v) => MapEntry(k, v.toJson())),
     };
 

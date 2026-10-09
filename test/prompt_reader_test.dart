@@ -39,5 +39,31 @@ void main() {
       expect(endRow, equals(1));
       expect(endCol, equals(76));
     });
+
+    test('word boundary helpers calculate boundaries correctly', () {
+      const text = 'hello world foo_bar';
+      // End of string: text.length = 19
+      expect(
+        PromptReader.prevWordBoundary(text, 19),
+        equals(12),
+      ); // 'foo_bar' start
+      expect(
+        PromptReader.prevWordBoundary(text, 12),
+        equals(6),
+      ); // 'world' start
+      expect(
+        PromptReader.prevWordBoundary(text, 6),
+        equals(0),
+      ); // 'hello' start
+      expect(PromptReader.prevWordBoundary(text, 0), equals(0));
+
+      expect(PromptReader.nextWordBoundary(text, 0), equals(5)); // 'hello' end
+      expect(PromptReader.nextWordBoundary(text, 5), equals(11)); // 'world' end
+      expect(
+        PromptReader.nextWordBoundary(text, 11),
+        equals(19),
+      ); // 'foo_bar' end
+      expect(PromptReader.nextWordBoundary(text, 19), equals(19));
+    });
   });
 }

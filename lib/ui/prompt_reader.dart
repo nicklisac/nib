@@ -4,6 +4,7 @@ import 'package:dart_console/dart_console.dart';
 import 'package:path/path.dart' as p;
 import 'ansi.dart';
 import 'autocomplete.dart';
+import 'key_binding.dart';
 import 'screen_coordinator.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
@@ -132,6 +133,41 @@ class PromptReader {
         _historyFile.writeAsStringSync('$trimmed\n', mode: FileMode.append);
       }
     } catch (_) {}
+  }
+
+  KeyBindings keyBindings = KeyBindings.defaults();
+
+  /// Callbacks for actions triggered via key bindings
+  void Function()? onSessionPicker;
+  void Function()? onThinkingCycle;
+  void Function()? onModelCycle;
+
+  static int prevWordBoundary(String text, int index) {
+    if (index <= 0) return 0;
+    var i = index;
+    // Skip trailing whitespace to the left
+    while (i > 0 && text[i - 1].trim().isEmpty) {
+      i--;
+    }
+    // Skip non-whitespace word characters to the left
+    while (i > 0 && text[i - 1].trim().isNotEmpty) {
+      i--;
+    }
+    return i;
+  }
+
+  static int nextWordBoundary(String text, int index) {
+    if (index >= text.length) return text.length;
+    var i = index;
+    // Skip whitespace to the right
+    while (i < text.length && text[i].trim().isEmpty) {
+      i++;
+    }
+    // Skip non-whitespace word characters to the right
+    while (i < text.length && text[i].trim().isNotEmpty) {
+      i++;
+    }
+    return i;
   }
 
   int get _terminalCols {
@@ -359,9 +395,13 @@ class PromptReader {
           continue;
         }
 
-        // Alt chords are never interrupts. Only the queue gesture is acted on;
-        // the rest of the keyboard surface is #25's decision, so they are
-        // swallowed rather than guessed at.
+        final isSlashCommandMode =
+            buffer.startsWith('/') && !buffer.contains(' ');
+        final paletteMatches = isSlashCommandMode
+            ? AutoCompleter.completeSlashInfo(buffer)
+            : <SlashCommandInfo>[];
+
+        // Alt chords and multi-key sequences
         if (event is AltKeyEvent) {
           if (window &&
               event.label == 'alt+enter' &&
@@ -384,17 +424,90 @@ class PromptReader {
             onCompose?.call(queued);
             return buffer;
           }
+
+          // Word jump backward: alt+left, ctrl+left, alt+b
+          if (event.label == 'alt+left' ||
+              event.label == 'ctrl+left' ||
+              event.label == 'alt+b') {
+            final newPos = prevWordBoundary(buffer, cursor);
+            if (newPos != cursor) {
+              cursor = newPos;
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: paletteMatches,
+                paletteIndex: paletteIndex,
+              );
+            }
+            continue;
+          }
+
+          // Word jump forward: alt+right, ctrl+right, alt+f
+          if (event.label == 'alt+right' ||
+              event.label == 'ctrl+right' ||
+              event.label == 'alt+f') {
+            final newPos = nextWordBoundary(buffer, cursor);
+            if (newPos != cursor) {
+              cursor = newPos;
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: paletteMatches,
+                paletteIndex: paletteIndex,
+              );
+            }
+            continue;
+          }
+
+          // Backward word deletion: alt+backspace
+          if (event.label == 'alt+backspace') {
+            if (cursor > 0) {
+              breakSilence();
+              final newPos = prevWordBoundary(buffer, cursor);
+              buffer = buffer.substring(0, newPos) + buffer.substring(cursor);
+              cursor = newPos;
+              paletteIndex = 0;
+              final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
+                  ? AutoCompleter.completeSlashInfo(buffer)
+                  : <SlashCommandInfo>[];
+              _publishDraft(buffer);
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: newMatches,
+                paletteIndex: paletteIndex,
+              );
+            }
+            continue;
+          }
+
+          // Check key action bindings (e.g. shift+tab for thinking cycle)
+          final action = keyBindings.match(event);
+          if (action != null) {
+            switch (action) {
+              case KeyAction.thinkingCycle:
+                onThinkingCycle?.call();
+                _repaint(prompt, buffer, cursor);
+                continue;
+              case KeyAction.sessionPicker:
+                onSessionPicker?.call();
+                continue;
+              case KeyAction.modelCycle:
+                onModelCycle?.call();
+                _repaint(prompt, buffer, cursor);
+                continue;
+              default:
+                break;
+            }
+          }
+
           continue;
         }
 
         final key = event as Key;
-
-        // Check if command palette is active
-        final isSlashCommandMode =
-            buffer.startsWith('/') && !buffer.contains(' ');
-        final paletteMatches = isSlashCommandMode
-            ? AutoCompleter.completeSlashInfo(buffer)
-            : <SlashCommandInfo>[];
 
         if (key.isControl) {
           // Inside the human-owned window, Esc and Ctrl+C are the interrupt and
@@ -706,6 +819,50 @@ class PromptReader {
               }
               break;
 
+            case ControlCharacter.ctrlU:
+              if (cursor > 0 || buffer.isNotEmpty) {
+                breakSilence();
+                // Ctrl+U deletes from start of line/buffer to cursor
+                buffer = buffer.substring(cursor);
+                cursor = 0;
+                paletteIndex = 0;
+                final newMatches =
+                    buffer.startsWith('/') && !buffer.contains(' ')
+                    ? AutoCompleter.completeSlashInfo(buffer)
+                    : <SlashCommandInfo>[];
+                _publishDraft(buffer);
+                _repaint(
+                  prompt,
+                  buffer,
+                  cursor,
+                  paletteMatches: newMatches,
+                  paletteIndex: paletteIndex,
+                );
+              }
+              break;
+
+            case ControlCharacter.ctrlW:
+              if (cursor > 0) {
+                breakSilence();
+                final newPos = prevWordBoundary(buffer, cursor);
+                buffer = buffer.substring(0, newPos) + buffer.substring(cursor);
+                cursor = newPos;
+                paletteIndex = 0;
+                final newMatches =
+                    buffer.startsWith('/') && !buffer.contains(' ')
+                    ? AutoCompleter.completeSlashInfo(buffer)
+                    : <SlashCommandInfo>[];
+                _publishDraft(buffer);
+                _repaint(
+                  prompt,
+                  buffer,
+                  cursor,
+                  paletteMatches: newMatches,
+                  paletteIndex: paletteIndex,
+                );
+              }
+              break;
+
             case ControlCharacter.tab:
               // If command palette is open, Tab selects the highlighted command
               if (paletteMatches.isNotEmpty) {
@@ -740,6 +897,24 @@ class PromptReader {
               break;
 
             default:
+              final action = keyBindings.match(key);
+              if (action != null) {
+                switch (action) {
+                  case KeyAction.thinkingCycle:
+                    onThinkingCycle?.call();
+                    _repaint(prompt, buffer, cursor);
+                    break;
+                  case KeyAction.sessionPicker:
+                    onSessionPicker?.call();
+                    break;
+                  case KeyAction.modelCycle:
+                    onModelCycle?.call();
+                    _repaint(prompt, buffer, cursor);
+                    break;
+                  default:
+                    break;
+                }
+              }
               break;
           }
         } else {

@@ -5,12 +5,15 @@ import 'package:dart_console/dart_console.dart';
 import '../agent/agent.dart';
 import '../agent/approval_manager.dart';
 import '../agent/config.dart';
+import '../agent/session.dart';
 import 'ambient_line.dart';
 import 'ansi.dart';
 import 'autocomplete.dart';
+import 'key_binding.dart';
 import 'markdown_renderer.dart';
 import 'prompt_reader.dart';
 import 'screen_coordinator.dart';
+import 'session_picker.dart';
 import 'slash_commands.dart';
 import 'status_bar.dart';
 import 'terminal_manager.dart';
@@ -54,8 +57,29 @@ class CliUi {
   CliUi(this.agent, [this.config, void Function(String text)? out])
     : _outSink = out,
       _slashHandler = SlashCommandHandler(agent, config) {
+    if (config != null && config!.keybindings.isNotEmpty) {
+      _promptReader.keyBindings = KeyBindings.fromJson(config!.keybindings);
+    }
     _promptReader.onCompose = (queued) {
       _ambient.showComposition(queued: queued);
+    };
+    _promptReader.onSessionPicker = () async {
+      final chosen = await SessionPicker.pickSession(
+        currentSession: agent.session,
+      );
+      if (chosen != null && chosen != agent.session.id) {
+        final loaded = await AgentSession.loadFromDisk(chosen);
+        if (loaded != null) {
+          agent.session = loaded;
+          final theme = NibTheme.current;
+          _writeLine(
+            theme.success.text(
+              '  ✔ Switched to session "$chosen" (${loaded.messages.length} messages).',
+            ),
+          );
+          _promptReader.repaintCurrentLine();
+        }
+      }
     };
     // The approval prompt *steals* the keys rather than contending for them, and
     // the half-composed draft is held meanwhile rather than dropped.

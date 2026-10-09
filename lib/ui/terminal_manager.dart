@@ -540,8 +540,10 @@ class InputDecoder {
             return [Key.control(ControlCharacter.home)];
           case 0x46:
             return [Key.control(ControlCharacter.end)];
-          case 0x5A: // shift+tab: consumed, not Escape + "[Z". Binding is #25's.
-            return const [];
+          case 0x5A: // shift+tab: CSI Z (Backtab)
+            return [
+              AltKeyEvent(Key.control(ControlCharacter.tab), 'shift+tab'),
+            ];
           default:
             arrow = null;
         }
