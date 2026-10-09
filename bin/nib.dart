@@ -293,7 +293,10 @@ void main(List<String> arguments) async {
   // Bodies are not injected: the system prompt carries an index and the model
   // pulls a skill's full instructions through the `skill` tool.
   await SkillsManager.instance.loadSkills(workspacePath: workspace);
-  session.rebuildSystemPrompt(appendPrompt: config.systemPromptAppend);
+  session.rebuildSystemPrompt(
+    appendPrompt: config.systemPromptAppend,
+    workspacePath: workspace,
+  );
 
   final tools = [
     BashTool(workingDirectory: workspace),

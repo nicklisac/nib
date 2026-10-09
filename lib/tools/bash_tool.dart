@@ -49,6 +49,11 @@ class BashTool extends AgentTool {
         'type': 'string',
         'description': 'The bash command line string to execute.',
       },
+      'description': {
+        'type': 'string',
+        'description':
+            'Brief present-participle description of what the command does (e.g. "Running tests").',
+      },
       'timeout_seconds': {
         'type': 'integer',
         'description': 'Optional execution timeout in seconds (default: 60).',

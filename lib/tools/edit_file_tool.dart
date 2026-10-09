@@ -30,21 +30,30 @@ class EditFileTool extends AgentTool {
       'target_content': {
         'type': 'string',
         'description':
-            'The exact contiguous block of text to be replaced. Must uniquely match in the file.',
+            'The exact contiguous block of text to be replaced (also accepted as oldText). Must uniquely match in the file.',
       },
       'replacement_content': {
         'type': 'string',
-        'description': 'The new text to replace target_content with.',
+        'description':
+            'The new text to replace target_content with (also accepted as newText).',
       },
     },
-    'required': ['path', 'target_content', 'replacement_content'],
+    'required': ['path'],
   };
 
   @override
   Future<String> execute(Map<String, dynamic> arguments) async {
     final rawPath = arguments['path'] as String?;
-    final targetContent = arguments['target_content'] as String?;
-    final replacementContent = arguments['replacement_content'] as String?;
+    final targetContent =
+        (arguments['target_content'] ??
+                arguments['oldText'] ??
+                arguments['old_text'])
+            as String?;
+    final replacementContent =
+        (arguments['replacement_content'] ??
+                arguments['newText'] ??
+                arguments['new_text'])
+            as String?;
 
     if (rawPath == null || rawPath.trim().isEmpty) {
       return 'Error: Path argument is required';

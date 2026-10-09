@@ -13,9 +13,11 @@ class AgentSession {
   int totalCompletionTokens = 0;
   int toolExecutionsCount = 0;
 
-  AgentSession({String? id, String? systemPrompt})
+  AgentSession({String? id, String? systemPrompt, String? workspacePath})
     : id = id ?? 'session_${DateTime.now().millisecondsSinceEpoch}',
-      systemPrompt = systemPrompt ?? _defaultSystemPrompt;
+      systemPrompt =
+          systemPrompt ??
+          buildDefaultSystemPrompt(workspacePath: workspacePath);
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
 
@@ -45,13 +47,24 @@ class AgentSession {
     if (completionTokens != null) totalCompletionTokens += completionTokens;
   }
 
-  void rebuildSystemPrompt({String? basePrompt, String? appendPrompt}) {
-    final base = basePrompt ?? _defaultSystemPrompt;
+  void rebuildSystemPrompt({
+    String? basePrompt,
+    String? appendPrompt,
+    String? workspacePath,
+  }) {
+    final base = (basePrompt ?? _defaultSystemPrompt).trimRight();
     final skillsPrompt = SkillsManager.instance.formatForSystemPrompt();
     final append = (appendPrompt != null && appendPrompt.isNotEmpty)
         ? '\n\n$appendPrompt'
         : '';
-    systemPrompt = '$base$skillsPrompt$append';
+    final cwd = workspacePath ?? Directory.current.path;
+    final now = DateTime.now();
+    final dateStr =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final runtimeInfo =
+        '\n\nCurrent date: $dateStr\nCurrent working directory: $cwd';
+
+    systemPrompt = '$base$skillsPrompt$append$runtimeInfo';
     addSystemPromptIfNeeded();
   }
 
@@ -250,26 +263,45 @@ class AgentSession {
     return list;
   }
 
-  static const String _defaultSystemPrompt = '''
-You are Nib, an expert proactive coding assistant running directly inside the user's terminal CLI.
-You are built in the minimalist and capable philosophy of Pi and Tau.
+  static String buildDefaultSystemPrompt({String? workspacePath}) {
+    final cwd = workspacePath ?? Directory.current.path;
+    final now = DateTime.now();
+    final dateStr =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    return '$_defaultSystemPrompt\n\nCurrent date: $dateStr\nCurrent working directory: $cwd';
+  }
 
-You have access to tools to interact directly with the user's local project workspace:
-- bash: Run commands, tests, git operations, and inspect terminal output.
-- read_file: Read files with exact line numbers.
-- write_file: Create new files or overwrite existing files.
-- edit_file: Perform precise, surgical search-and-replace edits.
-- list_dir: Explore folders and discover project structure.
-- search_files: Search code across files.
-- skill: Load the full instructions of a named agent skill.
+  static const String _defaultSystemPrompt = '''
+You are an expert coding assistant operating inside Nib, a minimalist coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+
+Available tools:
+- read_file: Read file contents
+- write_file: Create or overwrite files
+- edit_file: Make precise file edits with exact text replacement
+- bash: Execute bash commands (ls, grep, find, etc.)
+- list_dir: List files and subdirectories in a directory
+- search_files: Search code across files
+- web_search: Search the web
+- web_fetch: Fetch web page content
+- skill: Load the full instructions of a named agent skill
+
+In addition to the tools above, you may have access to other custom tools depending on the project.
 
 Guidelines:
-1. Always inspect files or directory layout before making blind changes.
-2. When modifying existing files, prefer edit_file for surgical edits.
-3. Verify changes when appropriate (e.g. run tests or check git diff using bash).
-4. Be concise, direct, and actionable in your explanations.
-5. Skills are listed by name only. If a task matches a skill in the Available
-   Agent Skills index, call the skill tool to load its workflow before acting on
-   it. Do not guess at a skill's contents, and do not load skills you will not use.
-''';
+- Prefer list_dir and search_files tools over bash for file exploration (faster, respects ignore rules)
+- Use read_file to examine files instead of cat or sed
+- Use write_file only for new files or complete rewrites
+- Use edit_file for precise changes (target_content must match exactly)
+- Keep target_content as small as possible while still being unique in the file. Do not pad with large unchanged regions
+- When using bash, include a brief present-participle description of the command's purpose (for example, 'Running tests')
+- Inspect relevant files and project instructions before editing
+- Make focused changes that preserve the project's architecture and style
+- Do not overwrite or discard unrelated user changes
+- Use the project's documented commands and package manager
+- Run relevant tests, formatting, linting, and type checks after changes
+- Report checks honestly; never claim a command passed unless you ran it
+- Ask before destructive operations or materially ambiguous design choices
+- Be concise in your responses
+- Show file paths clearly when working with files
+- Skills are listed by name only. If a task matches a skill in the Available Agent Skills index, call the skill tool to load its workflow before acting on it. Do not guess at a skill's contents, and do not load skills you will not use''';
 }
