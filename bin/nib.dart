@@ -15,6 +15,8 @@ import 'package:nib/tools/list_dir_tool.dart';
 import 'package:nib/tools/read_file_tool.dart';
 import 'package:nib/tools/search_files_tool.dart';
 import 'package:nib/tools/skill_tool.dart';
+import 'package:nib/tools/web_fetch_tool.dart';
+import 'package:nib/tools/web_search_tool.dart';
 import 'package:nib/tools/write_file_tool.dart';
 import 'package:nib/ui/ansi.dart';
 import 'package:nib/ui/cli_ui.dart';
@@ -248,6 +250,8 @@ void main(List<String> arguments) async {
     EditFileTool(workingDirectory: workspace),
     ListDirTool(workingDirectory: workspace),
     SearchFilesTool(workingDirectory: workspace),
+    WebSearchTool(configuredProvider: config.searchProvider),
+    WebFetchTool(),
     SkillTool(),
   ];
 

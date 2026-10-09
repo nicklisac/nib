@@ -78,6 +78,7 @@ class NibConfig {
   final int maxStuckIterations;
   final int hardIterationCap;
   final Map<String, dynamic> keybindings;
+  final String? searchProvider;
 
   NibConfig({
     this.defaultProvider = 'exllama',
@@ -90,6 +91,7 @@ class NibConfig {
     this.maxStuckIterations = 5,
     this.hardIterationCap = 200,
     Map<String, dynamic>? keybindings,
+    this.searchProvider,
   }) : providers = providers ?? {},
        keybindings = keybindings ?? {};
 
@@ -176,6 +178,7 @@ class NibConfig {
             keybindings: json['keybindings'] is Map
                 ? Map<String, dynamic>.from(json['keybindings'] as Map)
                 : null,
+            searchProvider: json['search_provider'] as String?,
           );
         } catch (_) {
           // Try next candidate
@@ -316,6 +319,7 @@ class NibConfig {
       if (maxStuckIterations != 5) 'max_stuck_iterations': maxStuckIterations,
       if (hardIterationCap != 200) 'hard_iteration_cap': hardIterationCap,
       if (keybindings.isNotEmpty) 'keybindings': keybindings,
+      if (searchProvider != null) 'search_provider': searchProvider,
       'providers': providers.map((k, v) => MapEntry(k, v.toJson())),
     };
 

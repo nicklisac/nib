@@ -11,6 +11,7 @@ dependencies:
   args: ^2.7.0
   dart_console: ^5.1.0
   diffutil_dart: ^5.0.0
+  html: ^0.15.7
   http: ^1.6.0
   path: ^1.9.1
   val_highlight: ^0.1.0
