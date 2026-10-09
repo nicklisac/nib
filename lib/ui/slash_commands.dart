@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import '../agent/agent.dart';
 import '../agent/approval_manager.dart';
 import '../agent/compaction.dart';
@@ -304,18 +305,17 @@ class SlashCommandHandler {
           return;
         }
         stdout.writeln();
+        final title = 'Skill: ${skill.name}';
+        final topUsed = 9 + title.length;
+        final topRule = max(2, 40 - topUsed);
         stdout.writeln(
-          '  ${theme.muted.text('╭─')} ${theme.accent.text('Skill: ${skill.name}')} ${theme.muted.text('────────────────────────────────────╮')}',
+          '  ${theme.muted.text('╭──')} ${theme.accent.text(title)} ${theme.muted.text('─' * topRule)}',
         );
+        stdout.writeln('    Location: ${theme.muted.text(skill.filePath)}');
         stdout.writeln(
-          '  ${theme.muted.text('│')} Location: ${theme.muted.text(skill.filePath)}',
+          '    Status:   ${skill.isEnabled ? theme.success.text('Active') : theme.muted.text('Disabled')}',
         );
-        stdout.writeln(
-          '  ${theme.muted.text('│')} Status:   ${skill.isEnabled ? theme.success.text('Active') : theme.muted.text('Disabled')}',
-        );
-        stdout.writeln(
-          '  ${theme.muted.text('╰───────────────────────────────────────────────────╯')}',
-        );
+        stdout.writeln('  ${theme.muted.text('╰──${'─' * 35}')}');
         stdout.writeln(MarkdownRenderer.render(skill.content, theme));
         stdout.writeln();
         break;

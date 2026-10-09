@@ -4,6 +4,7 @@ import 'package:dart_console/dart_console.dart';
 import 'package:path/path.dart' as p;
 import 'ansi.dart';
 import 'autocomplete.dart';
+import 'screen_coordinator.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
 
@@ -45,37 +46,57 @@ class PromptReader {
   String _savedDraft = '';
   late final File _historyFile;
 
-  /// Text composed during a turn, waiting for the turn to end. One slot; a
-  /// second message composes into the first rather than displacing it.
-  String queued = '';
+  final List<String> _queuedMessages = [];
+
+  /// Text composed during a turn, waiting for the turn to end.
+  String get queued => _queuedMessages.join('\n');
+
+  /// List of individual queued messages.
+  List<String> get queuedMessages => List.unmodifiable(_queuedMessages);
 
   /// Called whenever the queue changes, so the ambient line can show a queue
-  /// indicator. Presentation only — it writes nothing. The draft text itself is
-  /// not passed on: it is already on the prompt row, and echoing it would cost a
-  /// second row (#22).
+  /// indicator. Presentation only — it writes nothing.
   void Function(String queued)? onCompose;
 
-  PromptReader() {
+  final void Function(String text) _out;
+
+  PromptReader({void Function(String text)? out}) : _out = out ?? stdout.write {
     _initHistoryFile();
   }
 
-  bool get hasQueued => queued.isNotEmpty;
+  bool get hasQueued => _queuedMessages.isNotEmpty;
 
-  /// Compose [text] into the queue slot, newline-joined. Never overwrites what
+  /// Compose [text] into the queue slot. Never overwrites what
   /// is already there (feel doctrine rule 2).
   void enqueue(String text) {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    queued = queued.isEmpty ? trimmed : '$queued\n$trimmed';
+    _queuedMessages.add(trimmed);
     onCompose?.call(queued);
   }
 
-  /// Empties the queue slot and hands back its text.
+  /// Empties the queue slot and hands back its text joined by newlines.
   String takeQueued() {
     final text = queued;
-    queued = '';
+    _queuedMessages.clear();
     onCompose?.call(queued);
     return text;
+  }
+
+  /// Takes and removes the next queued message.
+  String takeNextQueued() {
+    if (_queuedMessages.isEmpty) return '';
+    final text = _queuedMessages.removeAt(0);
+    onCompose?.call(queued);
+    return text;
+  }
+
+  /// Takes and removes all queued messages as a list.
+  List<String> takeAllQueued() {
+    final copy = List<String>.from(_queuedMessages);
+    _queuedMessages.clear();
+    onCompose?.call(queued);
+    return copy;
   }
 
   void _initHistoryFile() {
@@ -163,6 +184,37 @@ class PromptReader {
   DateTime? _lastCtrlCTime;
   bool _windowEnded = false;
 
+  bool _inReadLine = false;
+  bool _isSilent = false;
+  bool _isSuspended = false;
+  String _currentPrompt = '';
+  String _currentBuffer = '';
+  int _currentCursor = 0;
+
+  bool get isDrafting => _inReadLine && !_isSilent;
+
+  void eraseCurrentLine() {
+    if (!_inReadLine || _isSilent || _isSuspended) return;
+    _clearPalette();
+    if (_cursorRow > 0) {
+      _out('\x1B[${_cursorRow}A');
+    }
+    _out('\r\x1B[J');
+    _cursorRow = 0;
+    _isSuspended = true;
+  }
+
+  void repaintCurrentLine() {
+    if (!_inReadLine) return;
+    if (ScreenCoordinator.instance.isActive) {
+      _repaint(_currentPrompt, _currentBuffer, _currentCursor);
+      return;
+    }
+    if (_isSilent || !_isSuspended) return;
+    _isSuspended = false;
+    _repaint(_currentPrompt, _currentBuffer, _currentCursor);
+  }
+
   /// Reads one line, reporting what the human meant. Returns null at EOF.
   ///
   /// [initial] seeds the buffer — this is how a draft held across an approval
@@ -172,12 +224,15 @@ class PromptReader {
     String initial = '',
     bool window = false,
     bool silent = false,
+    void Function()? onStartTyping,
     bool hasQueued = false,
   }) async {
     final first = await readLine(
       prompt: prompt,
       initial: initial,
       window: window,
+      silent: silent,
+      onStartTyping: onStartTyping,
     );
     if (first == null) {
       return SubmitResult(
@@ -209,26 +264,34 @@ class PromptReader {
   ///
   /// [window] marks this read as the human-owned window during a turn, where Esc
   /// and Ctrl+C interrupt and Alt+Enter queues.
-  /// [silent] defers the prompt: nothing is written until the human types. Used by
-  /// the mid-turn draft window, which opens on *every* tool call — printing a
-  /// prompt row each time would flash a line that vanishes when the tool finishes.
-  /// The first repaint draws the prompt and the buffer together, from the row the
-  /// cursor is already on.
+  /// [silent] defers prompt rendering until typing starts, so fast tools don't flicker.
+  /// [onStartTyping] is fired the instant the user begins typing.
   Future<String?> readLine({
     required String prompt,
     String initial = '',
     bool window = false,
     bool silent = false,
+    void Function()? onStartTyping,
   }) async {
     if (!stdin.hasTerminal) {
-      stdout.write(prompt);
+      _out(prompt);
       return stdin.readLineSync();
     }
 
+    _inReadLine = true;
+    _isSilent =
+        !ScreenCoordinator.instance.isActive && silent && initial.isEmpty;
+    _isSuspended = false;
+    _currentPrompt = prompt;
+    _currentBuffer = initial;
+    _currentCursor = initial.length;
+    TerminalManager.instance.isDrafting = !_isSilent;
     TerminalManager.instance.draft = initial;
-    // A seeded buffer is drawn with the prompt: a restored draft that is present
-    // but invisible is still a draft the human cannot see (feel doctrine rule 2).
-    if (!silent) stdout.write('$prompt$initial');
+    if (ScreenCoordinator.instance.isActive) {
+      _repaint(prompt, initial, initial.length);
+    } else if (!_isSilent) {
+      _out('$prompt$initial');
+    }
 
     var buffer = initial;
     var cursor = initial.length;
@@ -240,389 +303,484 @@ class PromptReader {
     var paletteIndex = 0;
     onCompose?.call(queued);
 
-    while (true) {
-      final event = await TerminalManager.instance.nextInput();
-
-      // The window closed under us: the stream needs the row back, or an approval
-      // prompt is taking the keys. Nothing typed is lost — the buffer is already
-      // published on TerminalManager.draft, which neither purge nor close reaches.
-      if (event is EndOfWindow) {
-        _windowEnded = true;
-        // Hand the row back clean. The draft prompt was written at a fresh row, so
-        // erasing from there down removes the draft line and leaves nothing behind
-        // for the transcript to be appended to. What was typed is already on
-        // TerminalManager.draft, where neither this nor a purge can reach it.
-        if (_cursorRow > 0) {
-          stdout.write('\x1B[${_cursorRow}A');
-        }
-        stdout.write('\r\x1B[J');
-        _cursorRow = 0;
-        _paletteLines = 0;
-        return null;
+    void breakSilence() {
+      if (_isSilent) {
+        _isSilent = false;
+        _isSuspended = false;
+        TerminalManager.instance.isDrafting = true;
+        onStartTyping?.call();
+        _out(prompt);
       }
+    }
 
-      // A paste is one literal blob. It never submits, no matter how many
-      // newlines it carries (feel doctrine rule 3).
-      if (event is PasteBlob) {
-        _clearPalette();
-        final text = event.text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-        buffer = buffer.substring(0, cursor) + text + buffer.substring(cursor);
-        cursor += text.length;
-        paletteIndex = 0;
-        _publishDraft(buffer);
-        _repaint(prompt, buffer, cursor);
-        continue;
-      }
+    try {
+      while (true) {
+        final event = await TerminalManager.instance.nextInput();
 
-      // Alt chords are never interrupts. Only the queue gesture is acted on;
-      // the rest of the keyboard surface is #25's decision, so they are
-      // swallowed rather than guessed at.
-      if (event is AltKeyEvent) {
-        if (window && event.label == 'alt+enter' && buffer.trim().isNotEmpty) {
-          _clearPalette(prompt, buffer);
-          stdout.writeln();
+        // The window closed under us: the stream needs the row back, or an approval
+        // prompt is taking the keys. Nothing typed is lost — the buffer is already
+        // published on TerminalManager.draft, which neither purge nor close reaches.
+        if (event is EndOfWindow) {
+          _windowEnded = true;
+          // Hand the row back clean. The draft prompt was written at a fresh row, so
+          // erasing from there down removes the draft line and leaves nothing behind
+          // for the transcript to be appended to. What was typed is already on
+          // TerminalManager.draft, where neither this nor a purge can reach it.
+          if (ScreenCoordinator.instance.isActive) {
+            ScreenCoordinator.instance.clearPromptArea();
+            ScreenCoordinator.instance.updatePromptLines(1);
+          } else if (!_isSilent) {
+            if (_cursorRow > 0) {
+              _out('\x1B[${_cursorRow}A');
+            }
+            _out('\r\x1B[J');
+          }
           _cursorRow = 0;
           _paletteLines = 0;
-          _pendingKind = SubmitKind.queue;
-          TerminalManager.instance.draft = '';
-          onCompose?.call(queued);
-          return buffer;
-        }
-        continue;
-      }
-
-      final key = event as Key;
-
-      // Check if command palette is active
-      final isSlashCommandMode =
-          buffer.startsWith('/') && !buffer.contains(' ');
-      final paletteMatches = isSlashCommandMode
-          ? AutoCompleter.completeSlashInfo(buffer)
-          : <SlashCommandInfo>[];
-
-      if (key.isControl) {
-        // Inside the human-owned window, Esc and Ctrl+C are the interrupt and
-        // nothing else. The draft they leave behind is already published where a
-        // purge cannot reach it.
-        if (window &&
-            (key.controlChar == ControlCharacter.escape ||
-                key.controlChar == ControlCharacter.ctrlC)) {
-          _windowEnded = true;
-          _clearPalette();
-          onInterrupt?.call(
-            key.controlChar == ControlCharacter.escape ? 'Esc' : 'Ctrl+C',
-          );
           return null;
         }
 
-        switch (key.controlChar) {
-          case ControlCharacter.enter:
-            // Enter on an empty line while a message is queued hands the queue
-            // over; typing it again is the confirmation.
-            if (window &&
-                hasQueued &&
-                buffer.trim().isEmpty &&
-                queued.trim().isNotEmpty) {
-              _clearPalette(prompt, buffer);
-              stdout.writeln();
-              _cursorRow = 0;
-              _paletteLines = 0;
-              _pendingKind = SubmitKind.flushQueue;
-              TerminalManager.instance.draft = '';
-              onCompose?.call(queued);
-              return buffer;
-            }
-
-            // If palette is open and user pressed enter on a partial match
-            if (paletteMatches.isNotEmpty &&
-                buffer.length < paletteMatches[paletteIndex].command.length) {
-              final selectedCmd = paletteMatches[paletteIndex].command;
-              if (selectedCmd == '/theme' ||
-                  selectedCmd == '/provider' ||
-                  selectedCmd == '/model' ||
-                  selectedCmd == '/compact') {
-                buffer = '$selectedCmd ';
-                cursor = buffer.length;
-                paletteIndex = 0;
-                _repaint(prompt, buffer, cursor);
-                continue;
-              } else {
-                buffer = selectedCmd;
-              }
-            }
-
-            _clearPalette(prompt, buffer);
-            stdout.writeln();
-            _cursorRow = 0;
-            _paletteLines = 0;
-            final result = buffer.trim();
-            if (result.isNotEmpty) {
-              addToHistory(result);
-            }
-            TerminalManager.instance.draft = '';
-            onCompose?.call(queued);
-            return buffer;
-
-          case ControlCharacter.ctrlC:
-            _clearPalette();
-            if (buffer.isNotEmpty) {
-              // Ctrl+C on a non-empty line used to wipe the line. An interrupt
-              // never discards a draft (feel doctrine rule 2), so it stops
-              // clearing and falls through to the exit hint instead.
-              if (_cursorRow > 0) {
-                stdout.write('\x1B[${_cursorRow}A');
-              }
-              stdout.writeln();
-              _cursorRow = 0;
-              _paletteLines = 0;
-              stdout.write(prompt);
-              _repaint(prompt, buffer, cursor);
-              continue;
-            } else {
-              final now = DateTime.now();
-              if (_lastCtrlCTime != null &&
-                  now.difference(_lastCtrlCTime!) <
-                      const Duration(seconds: 2)) {
-                stdout.writeln();
-                return null;
-              } else {
-                _lastCtrlCTime = now;
-                stdout.writeln();
-                stdout.writeln(
-                  '  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}',
-                );
-                stdout.write(prompt);
-                continue;
-              }
-            }
-
-          case ControlCharacter.ctrlD:
-            if (buffer.isEmpty) {
-              return null;
-            }
-            break;
-
-          case ControlCharacter.ctrlJ:
-            // Ctrl+J inserts a newline instead of submitting. Its byte is
-            // distinct from Enter's — raw mode clears ICRNL — so the old
-            // collision was Nib's decoder, not the terminal.
-            buffer =
-                '${buffer.substring(0, cursor)}\n${buffer.substring(cursor)}';
-            cursor += 1;
-            paletteIndex = 0;
-            _publishDraft(buffer);
-            _repaint(prompt, buffer, cursor);
-            break;
-
-          case ControlCharacter.arrowUp:
-            if (paletteMatches.isNotEmpty) {
-              // Navigate command palette upward
-              paletteIndex =
-                  (paletteIndex - 1 + paletteMatches.length) %
-                  paletteMatches.length;
-              _repaint(
-                prompt,
-                buffer,
-                cursor,
-                paletteMatches: paletteMatches,
-                paletteIndex: paletteIndex,
-              );
-            } else if (_history.isNotEmpty) {
-              // Recall older history entry (Tau-style)
-              if (_historyIndex == -1) {
-                _savedDraft = buffer;
-              }
-              if (_historyIndex < _history.length - 1) {
-                _historyIndex++;
-                buffer = _history[_history.length - 1 - _historyIndex];
-                cursor = buffer.length;
-                _publishDraft(buffer);
-                _repaint(prompt, buffer, cursor);
-              }
-            }
-            break;
-
-          case ControlCharacter.arrowDown:
-            if (paletteMatches.isNotEmpty) {
-              // Navigate command palette downward
-              paletteIndex = (paletteIndex + 1) % paletteMatches.length;
-              _repaint(
-                prompt,
-                buffer,
-                cursor,
-                paletteMatches: paletteMatches,
-                paletteIndex: paletteIndex,
-              );
-            } else if (_historyIndex > 0) {
-              _historyIndex--;
-              buffer = _history[_history.length - 1 - _historyIndex];
-              cursor = buffer.length;
-              _publishDraft(buffer);
-              _repaint(prompt, buffer, cursor);
-            } else if (_historyIndex == 0) {
-              _historyIndex = -1;
-              buffer = _savedDraft;
-              cursor = buffer.length;
-              _publishDraft(buffer);
-              _repaint(prompt, buffer, cursor);
-            }
-            break;
-
-          case ControlCharacter.arrowLeft:
-            if (cursor > 0) {
-              cursor--;
-              _repaint(
-                prompt,
-                buffer,
-                cursor,
-                paletteMatches: paletteMatches,
-                paletteIndex: paletteIndex,
-              );
-            }
-            break;
-
-          case ControlCharacter.arrowRight:
-            if (cursor < buffer.length) {
-              cursor++;
-              _repaint(
-                prompt,
-                buffer,
-                cursor,
-                paletteMatches: paletteMatches,
-                paletteIndex: paletteIndex,
-              );
-            }
-            break;
-
-          case ControlCharacter.home:
-          case ControlCharacter.ctrlA:
-            cursor = 0;
-            _repaint(
-              prompt,
-              buffer,
-              cursor,
-              paletteMatches: paletteMatches,
-              paletteIndex: paletteIndex,
-            );
-            break;
-
-          case ControlCharacter.end:
-          case ControlCharacter.ctrlE:
-            cursor = buffer.length;
-            _repaint(
-              prompt,
-              buffer,
-              cursor,
-              paletteMatches: paletteMatches,
-              paletteIndex: paletteIndex,
-            );
-            break;
-
-          case ControlCharacter.backspace:
-          case ControlCharacter.ctrlH:
-            if (cursor > 0) {
-              buffer =
-                  buffer.substring(0, cursor - 1) + buffer.substring(cursor);
-              cursor--;
-              paletteIndex = 0;
-              final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
-                  ? AutoCompleter.completeSlashInfo(buffer)
-                  : <SlashCommandInfo>[];
-              _publishDraft(buffer);
-              _repaint(
-                prompt,
-                buffer,
-                cursor,
-                paletteMatches: newMatches,
-                paletteIndex: paletteIndex,
-              );
-            }
-            break;
-
-          case ControlCharacter.delete:
-            if (cursor < buffer.length) {
-              buffer =
-                  buffer.substring(0, cursor) + buffer.substring(cursor + 1);
-              final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
-                  ? AutoCompleter.completeSlashInfo(buffer)
-                  : <SlashCommandInfo>[];
-              _publishDraft(buffer);
-              _repaint(
-                prompt,
-                buffer,
-                cursor,
-                paletteMatches: newMatches,
-                paletteIndex: paletteIndex,
-              );
-            }
-            break;
-
-          case ControlCharacter.tab:
-            // If command palette is open, Tab selects the highlighted command
-            if (paletteMatches.isNotEmpty) {
-              final selectedCmd = paletteMatches[paletteIndex].command;
-              buffer = '$selectedCmd ';
-              cursor = buffer.length;
-              paletteIndex = 0;
-              _publishDraft(buffer);
-              _repaint(prompt, buffer, cursor);
-            } else {
-              // File completion
-              final completion = _tryComplete(buffer, cursor);
-              if (completion != null) {
-                buffer = completion.newBuffer;
-                cursor = completion.newCursor;
-                if (completion.previewOptions != null &&
-                    completion.previewOptions!.isNotEmpty) {
-                  _showCompletionPreview(
-                    prompt,
-                    buffer,
-                    cursor,
-                    completion.previewOptions!,
-                  );
-                } else {
-                  _publishDraft(buffer);
-                  _repaint(prompt, buffer, cursor);
-                }
-              }
-            }
-            break;
-
-          default:
-            break;
-        }
-      } else {
-        // Printable character
-        final char = key.char;
-        if (char == '\x1B') {
-          // Escape pressed: dismiss palette. During a turn Escape is the
-          // interrupt gesture and reaches this reader only while an approval
-          // prompt holds the keys, where it dismisses the palette and nothing
-          // else (feel doctrine rule 7).
+        // A paste is one literal blob. It never submits, no matter how many
+        // newlines it carries (feel doctrine rule 3).
+        if (event is PasteBlob) {
+          breakSilence();
           _clearPalette();
+          final text = event.text
+              .replaceAll('\r\n', '\n')
+              .replaceAll('\r', '\n');
+          buffer =
+              buffer.substring(0, cursor) + text + buffer.substring(cursor);
+          cursor += text.length;
+          _currentBuffer = buffer;
+          _currentCursor = cursor;
+          paletteIndex = 0;
+          _publishDraft(buffer);
           _repaint(prompt, buffer, cursor);
           continue;
         }
 
-        if (char.isNotEmpty) {
-          buffer =
-              buffer.substring(0, cursor) + char + buffer.substring(cursor);
-          cursor += char.length;
-          paletteIndex = 0;
+        // Alt chords are never interrupts. Only the queue gesture is acted on;
+        // the rest of the keyboard surface is #25's decision, so they are
+        // swallowed rather than guessed at.
+        if (event is AltKeyEvent) {
+          if (window &&
+              event.label == 'alt+enter' &&
+              buffer.trim().isNotEmpty) {
+            _clearPalette(prompt, buffer);
+            if (ScreenCoordinator.instance.isActive) {
+              ScreenCoordinator.instance.clearPromptArea();
+              ScreenCoordinator.instance.updatePromptLines(1);
+            } else {
+              if (_cursorRow > 0) {
+                _out('\x1B[${_cursorRow}A');
+              }
+              _out('\r\x1B[2K');
+            }
+            _cursorRow = 0;
+            _paletteLines = 0;
+            _pendingKind = SubmitKind.queue;
+            TerminalManager.instance.draft = '';
+            TerminalManager.instance.isDrafting = false;
+            onCompose?.call(queued);
+            return buffer;
+          }
+          continue;
+        }
 
-          final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
-              ? AutoCompleter.completeSlashInfo(buffer)
-              : <SlashCommandInfo>[];
-          _publishDraft(buffer);
-          _repaint(
-            prompt,
-            buffer,
-            cursor,
-            paletteMatches: newMatches,
-            paletteIndex: paletteIndex,
-          );
+        final key = event as Key;
+
+        // Check if command palette is active
+        final isSlashCommandMode =
+            buffer.startsWith('/') && !buffer.contains(' ');
+        final paletteMatches = isSlashCommandMode
+            ? AutoCompleter.completeSlashInfo(buffer)
+            : <SlashCommandInfo>[];
+
+        if (key.isControl) {
+          // Inside the human-owned window, Esc and Ctrl+C are the interrupt and
+          // nothing else. The draft they leave behind is already published where a
+          // purge cannot reach it.
+          if (window &&
+              (key.controlChar == ControlCharacter.escape ||
+                  key.controlChar == ControlCharacter.ctrlC)) {
+            _windowEnded = true;
+            _clearPalette();
+            if (ScreenCoordinator.instance.isActive) {
+              ScreenCoordinator.instance.clearPromptArea();
+              ScreenCoordinator.instance.updatePromptLines(1);
+            } else if (!_isSilent) {
+              if (_cursorRow > 0) {
+                _out('\x1B[${_cursorRow}A');
+              }
+              _out('\r\x1B[J');
+            }
+            onInterrupt?.call(
+              key.controlChar == ControlCharacter.escape ? 'Esc' : 'Ctrl+C',
+            );
+            return null;
+          }
+
+          switch (key.controlChar) {
+            case ControlCharacter.enter:
+              if (window) {
+                if (buffer.trim().isNotEmpty) {
+                  _clearPalette(prompt, buffer);
+                  if (ScreenCoordinator.instance.isActive) {
+                    ScreenCoordinator.instance.clearPromptArea();
+                    ScreenCoordinator.instance.updatePromptLines(1);
+                  } else {
+                    if (_cursorRow > 0) {
+                      _out('\x1B[${_cursorRow}A');
+                    }
+                    _out('\r\x1B[2K');
+                  }
+                  _cursorRow = 0;
+                  _paletteLines = 0;
+                  _pendingKind = SubmitKind.queue;
+                  final result = buffer.trim();
+                  addToHistory(result);
+                  TerminalManager.instance.draft = '';
+                  TerminalManager.instance.isDrafting = false;
+                  onCompose?.call(queued);
+                  return buffer;
+                }
+                continue;
+              }
+
+              // Enter on an empty line while a message is queued hands the queue
+              // over; typing it again is the confirmation.
+              if (!window &&
+                  hasQueued &&
+                  buffer.trim().isEmpty &&
+                  queued.trim().isNotEmpty) {
+                _clearPalette(prompt, buffer);
+                if (ScreenCoordinator.instance.isActive) {
+                  ScreenCoordinator.instance.clearPromptArea();
+                  ScreenCoordinator.instance.updatePromptLines(1);
+                } else {
+                  _out('\n');
+                }
+                _cursorRow = 0;
+                _paletteLines = 0;
+                _pendingKind = SubmitKind.flushQueue;
+                TerminalManager.instance.draft = '';
+                TerminalManager.instance.isDrafting = false;
+                onCompose?.call(queued);
+                return buffer;
+              }
+
+              // If palette is open and user pressed enter on a partial match
+              if (paletteMatches.isNotEmpty &&
+                  buffer.length < paletteMatches[paletteIndex].command.length) {
+                final selectedCmd = paletteMatches[paletteIndex].command;
+                if (selectedCmd == '/theme' ||
+                    selectedCmd == '/provider' ||
+                    selectedCmd == '/model' ||
+                    selectedCmd == '/compact') {
+                  buffer = '$selectedCmd ';
+                  cursor = buffer.length;
+                  _currentBuffer = buffer;
+                  _currentCursor = cursor;
+                  paletteIndex = 0;
+                  _repaint(prompt, buffer, cursor);
+                  continue;
+                } else {
+                  buffer = selectedCmd;
+                }
+              }
+
+              _clearPalette(prompt, buffer);
+              if (ScreenCoordinator.instance.isActive) {
+                ScreenCoordinator.instance.clearPromptArea();
+                ScreenCoordinator.instance.updatePromptLines(1);
+              } else {
+                _out('\n');
+              }
+              _cursorRow = 0;
+              _paletteLines = 0;
+              final result = buffer.trim();
+              if (result.isNotEmpty) {
+                addToHistory(result);
+              }
+              TerminalManager.instance.draft = '';
+              TerminalManager.instance.isDrafting = false;
+              onCompose?.call(queued);
+              return buffer;
+
+            case ControlCharacter.ctrlC:
+              _clearPalette();
+              if (buffer.isNotEmpty) {
+                // Ctrl+C on a non-empty line used to wipe the line. An interrupt
+                // never discards a draft (feel doctrine rule 2), so it stops
+                // clearing and falls through to the exit hint instead.
+                if (_cursorRow > 0) {
+                  _out('\x1B[${_cursorRow}A');
+                }
+                _out('\n');
+                _cursorRow = 0;
+                _paletteLines = 0;
+                _out(prompt);
+                _repaint(prompt, buffer, cursor);
+                continue;
+              } else {
+                final now = DateTime.now();
+                if (_lastCtrlCTime != null &&
+                    now.difference(_lastCtrlCTime!) <
+                        const Duration(seconds: 2)) {
+                  _out('\n');
+                  return null;
+                } else {
+                  _lastCtrlCTime = now;
+                  _out('\n');
+                  _out(
+                    '  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}\n',
+                  );
+                  _out(prompt);
+                  continue;
+                }
+              }
+
+            case ControlCharacter.ctrlD:
+              if (buffer.isEmpty) {
+                return null;
+              }
+              break;
+
+            case ControlCharacter.ctrlJ:
+              // Ctrl+J inserts a newline instead of submitting. Its byte is
+              // distinct from Enter's — raw mode clears ICRNL — so the old
+              // collision was Nib's decoder, not the terminal.
+              breakSilence();
+              buffer =
+                  '${buffer.substring(0, cursor)}\n${buffer.substring(cursor)}';
+              cursor += 1;
+              paletteIndex = 0;
+              _publishDraft(buffer);
+              _repaint(prompt, buffer, cursor);
+              break;
+
+            case ControlCharacter.arrowUp:
+              if (paletteMatches.isNotEmpty) {
+                // Navigate command palette upward
+                paletteIndex =
+                    (paletteIndex - 1 + paletteMatches.length) %
+                    paletteMatches.length;
+                _repaint(
+                  prompt,
+                  buffer,
+                  cursor,
+                  paletteMatches: paletteMatches,
+                  paletteIndex: paletteIndex,
+                );
+              } else if (_history.isNotEmpty) {
+                // Recall older history entry (Tau-style)
+                if (_historyIndex == -1) {
+                  _savedDraft = buffer;
+                }
+                if (_historyIndex < _history.length - 1) {
+                  _historyIndex++;
+                  buffer = _history[_history.length - 1 - _historyIndex];
+                  cursor = buffer.length;
+                  _publishDraft(buffer);
+                  _repaint(prompt, buffer, cursor);
+                }
+              }
+              break;
+
+            case ControlCharacter.arrowDown:
+              if (paletteMatches.isNotEmpty) {
+                // Navigate command palette downward
+                paletteIndex = (paletteIndex + 1) % paletteMatches.length;
+                _repaint(
+                  prompt,
+                  buffer,
+                  cursor,
+                  paletteMatches: paletteMatches,
+                  paletteIndex: paletteIndex,
+                );
+              } else if (_historyIndex > 0) {
+                _historyIndex--;
+                buffer = _history[_history.length - 1 - _historyIndex];
+                cursor = buffer.length;
+                _publishDraft(buffer);
+                _repaint(prompt, buffer, cursor);
+              } else if (_historyIndex == 0) {
+                _historyIndex = -1;
+                buffer = _savedDraft;
+                cursor = buffer.length;
+                _publishDraft(buffer);
+                _repaint(prompt, buffer, cursor);
+              }
+              break;
+
+            case ControlCharacter.arrowLeft:
+              if (cursor > 0) {
+                cursor--;
+                _repaint(
+                  prompt,
+                  buffer,
+                  cursor,
+                  paletteMatches: paletteMatches,
+                  paletteIndex: paletteIndex,
+                );
+              }
+              break;
+
+            case ControlCharacter.arrowRight:
+              if (cursor < buffer.length) {
+                cursor++;
+                _repaint(
+                  prompt,
+                  buffer,
+                  cursor,
+                  paletteMatches: paletteMatches,
+                  paletteIndex: paletteIndex,
+                );
+              }
+              break;
+
+            case ControlCharacter.home:
+            case ControlCharacter.ctrlA:
+              cursor = 0;
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: paletteMatches,
+                paletteIndex: paletteIndex,
+              );
+              break;
+
+            case ControlCharacter.end:
+            case ControlCharacter.ctrlE:
+              cursor = buffer.length;
+              _repaint(
+                prompt,
+                buffer,
+                cursor,
+                paletteMatches: paletteMatches,
+                paletteIndex: paletteIndex,
+              );
+              break;
+
+            case ControlCharacter.backspace:
+            case ControlCharacter.ctrlH:
+              if (cursor > 0) {
+                breakSilence();
+                buffer =
+                    buffer.substring(0, cursor - 1) + buffer.substring(cursor);
+                cursor--;
+                paletteIndex = 0;
+                final newMatches =
+                    buffer.startsWith('/') && !buffer.contains(' ')
+                    ? AutoCompleter.completeSlashInfo(buffer)
+                    : <SlashCommandInfo>[];
+                _publishDraft(buffer);
+                _repaint(
+                  prompt,
+                  buffer,
+                  cursor,
+                  paletteMatches: newMatches,
+                  paletteIndex: paletteIndex,
+                );
+              }
+              break;
+
+            case ControlCharacter.delete:
+              if (cursor < buffer.length) {
+                breakSilence();
+                buffer =
+                    buffer.substring(0, cursor) + buffer.substring(cursor + 1);
+                final newMatches =
+                    buffer.startsWith('/') && !buffer.contains(' ')
+                    ? AutoCompleter.completeSlashInfo(buffer)
+                    : <SlashCommandInfo>[];
+                _publishDraft(buffer);
+                _repaint(
+                  prompt,
+                  buffer,
+                  cursor,
+                  paletteMatches: newMatches,
+                  paletteIndex: paletteIndex,
+                );
+              }
+              break;
+
+            case ControlCharacter.tab:
+              // If command palette is open, Tab selects the highlighted command
+              if (paletteMatches.isNotEmpty) {
+                breakSilence();
+                final selectedCmd = paletteMatches[paletteIndex].command;
+                buffer = '$selectedCmd ';
+                cursor = buffer.length;
+                paletteIndex = 0;
+                _publishDraft(buffer);
+                _repaint(prompt, buffer, cursor);
+              } else {
+                // File completion
+                final completion = _tryComplete(buffer, cursor);
+                if (completion != null) {
+                  breakSilence();
+                  buffer = completion.newBuffer;
+                  cursor = completion.newCursor;
+                  if (completion.previewOptions != null &&
+                      completion.previewOptions!.isNotEmpty) {
+                    _showCompletionPreview(
+                      prompt,
+                      buffer,
+                      cursor,
+                      completion.previewOptions!,
+                    );
+                  } else {
+                    _publishDraft(buffer);
+                    _repaint(prompt, buffer, cursor);
+                  }
+                }
+              }
+              break;
+
+            default:
+              break;
+          }
+        } else {
+          // Printable character
+          final char = key.char;
+          if (char == '\x1B') {
+            // Escape pressed: dismiss palette. During a turn Escape is the
+            // interrupt gesture and reaches this reader only while an approval
+            // prompt holds the keys, where it dismisses the palette and nothing
+            // else (feel doctrine rule 7).
+            _clearPalette();
+            _repaint(prompt, buffer, cursor);
+            continue;
+          }
+
+          if (char.isNotEmpty) {
+            breakSilence();
+            buffer =
+                buffer.substring(0, cursor) + char + buffer.substring(cursor);
+            cursor += char.length;
+            paletteIndex = 0;
+
+            final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
+                ? AutoCompleter.completeSlashInfo(buffer)
+                : <SlashCommandInfo>[];
+            _publishDraft(buffer);
+            _repaint(
+              prompt,
+              buffer,
+              cursor,
+              paletteMatches: newMatches,
+              paletteIndex: paletteIndex,
+            );
+          }
         }
       }
+    } finally {
+      _inReadLine = false;
+      _isSilent = true;
+      _isSuspended = false;
+      TerminalManager.instance.isDrafting = false;
     }
   }
 
@@ -630,17 +788,25 @@ class PromptReader {
   /// reach it, and tells the ambient line about it.
   void _publishDraft(String buffer) {
     TerminalManager.instance.draft = buffer;
+    _currentBuffer = buffer;
     onCompose?.call(queued);
   }
 
   void _clearPalette([String? prompt, String? buffer]) {
     if (_paletteLines > 0) {
-      if (_cursorRow > 0) {
-        stdout.write('\x1B[${_cursorRow}A');
-      }
-      stdout.write('\r\x1B[J');
-      if (prompt != null && buffer != null) {
-        stdout.write('$prompt$buffer');
+      if (ScreenCoordinator.instance.isActive) {
+        ScreenCoordinator.instance.clearPromptArea();
+        if (prompt != null && buffer != null) {
+          _repaint(prompt, buffer, buffer.length);
+        }
+      } else {
+        if (_cursorRow > 0) {
+          _out('\x1B[${_cursorRow}A');
+        }
+        _out('\r\x1B[J');
+        if (prompt != null && buffer != null) {
+          _out('$prompt$buffer');
+        }
       }
       _paletteLines = 0;
       _cursorRow = 0;
@@ -654,28 +820,97 @@ class PromptReader {
     List<SlashCommandInfo>? paletteMatches,
     int paletteIndex = 0,
   }) {
+    _currentPrompt = prompt;
+    _currentBuffer = buffer;
+    _currentCursor = cursor;
+    if (_isSuspended) return;
     final cols = _terminalCols;
 
-    // 1. Return cursor back up to the prompt start row
-    if (_cursorRow > 0) {
-      stdout.write('\x1B[${_cursorRow}A');
-    }
-
-    // 2. Clear from beginning of prompt line down to bottom of screen
-    stdout.write('\r\x1B[J');
-
-    // 3. Print prompt and buffer, then clear the rest of the line it ends on. The
-    // prompt row is ours, and without this a wider previous render — an ambient
-    // row, or a longer draft before an edit — leaves fragments to the right.
-    stdout.write('$prompt$buffer\x1B[K');
-
-    // 4. Calculate where cursor ended up on prompt
     final end = cursorPosition(prompt, buffer, buffer.length, cols);
     final endRow = end.$1;
 
     final target = cursorPosition(prompt, buffer, cursor, cols);
     final targetRow = target.$1;
     final targetCol = target.$2;
+
+    if (ScreenCoordinator.instance.isActive) {
+      var extraLines = 0;
+      List<SlashCommandInfo>? visibleMatches;
+      int start = 0;
+      if (paletteMatches != null && paletteMatches.isNotEmpty) {
+        const maxShow = 6;
+        start = (paletteIndex >= maxShow) ? (paletteIndex - maxShow + 1) : 0;
+        visibleMatches = paletteMatches.skip(start).take(maxShow).toList();
+        extraLines = visibleMatches.length + 4;
+      }
+
+      final neededLines = endRow + 1 + extraLines;
+      ScreenCoordinator.instance.updatePromptLines(neededLines);
+      ScreenCoordinator.instance.clearPromptArea();
+
+      final promptStart = ScreenCoordinator.instance.promptStartRow;
+      _out('\x1B[$promptStart;1H');
+
+      final formattedBuffer = buffer
+          .replaceAll('\r\n', '\n')
+          .replaceAll('\n', '\r\n');
+      _out('$prompt$formattedBuffer');
+
+      if (visibleMatches != null && visibleMatches.isNotEmpty) {
+        final theme = NibTheme.current;
+        final paletteStartRow = promptStart + endRow + 1;
+        _out('\x1B[$paletteStartRow;1H');
+        _out(
+          '  ${theme.muted.text('╭──')} ${theme.accent.text('Commands')} ${theme.muted.text('─' * 20)}\r\n',
+        );
+
+        for (int i = 0; i < visibleMatches.length; i++) {
+          final actualIndex = start + i;
+          final cmd = visibleMatches[i];
+          final pointer = actualIndex == paletteIndex
+              ? theme.accent.text('▸')
+              : ' ';
+          final cmdName = cmd.command.padRight(10);
+          final desc = cmd.description;
+          final truncatedDesc = desc.length > 44
+              ? '${desc.substring(0, 41)}...'
+              : desc;
+
+          if (actualIndex == paletteIndex) {
+            _out(
+              '    $pointer ${Ansi.boldText(theme.accent.text(cmdName))} ${theme.surface.bg}${theme.accent.text(" $truncatedDesc ")}\x1B[0m\r\n',
+            );
+          } else {
+            _out(
+              '    $pointer ${theme.secondary.text(cmdName)} ${theme.muted.text(truncatedDesc)}\r\n',
+            );
+          }
+        }
+
+        _out('  ${theme.muted.text('╰──${'─' * 35}')}\r\n');
+        _out(
+          '  ${theme.muted.text('↑/↓ navigate  Tab/Enter select  Esc dismiss')}',
+        );
+      }
+
+      ScreenCoordinator.instance.positionPromptCursor(targetRow, targetCol + 1);
+      _cursorRow = targetRow;
+      _paletteLines = extraLines;
+      return;
+    }
+
+    // 1. Return cursor back up to the prompt start row
+    if (_cursorRow > 0) {
+      _out('\x1B[${_cursorRow}A');
+    }
+
+    // 2. Clear from beginning of prompt line down to bottom of screen
+    _out('\r\x1B[J');
+
+    // 3. Print prompt and buffer, then clear the rest of the line it ends on. The
+    // prompt row is ours, and without this a wider previous render — an ambient
+    // row, or a longer draft before an edit — leaves fragments to the right.
+    _out('$prompt$buffer\x1B[K');
 
     var extraLines = 0;
 
@@ -688,9 +923,9 @@ class PromptReader {
           : 0;
       final visibleMatches = paletteMatches.skip(start).take(maxShow).toList();
 
-      stdout.writeln();
-      stdout.writeln(
-        '  ${theme.muted.text('╭─')} ${theme.accent.text('Commands')} ${theme.muted.text('──────────────────────────────────────────────╮')}',
+      _out('\n');
+      _out(
+        '  ${theme.muted.text('╭──')} ${theme.accent.text('Commands')} ${theme.muted.text('─' * 20)}\n',
       );
       extraLines += 2;
 
@@ -707,21 +942,19 @@ class PromptReader {
             : desc;
 
         if (actualIndex == paletteIndex) {
-          stdout.writeln(
-            '  ${theme.muted.text('│')} $pointer ${Ansi.boldText(theme.accent.text(cmdName))} ${theme.surface.bg}${theme.accent.text(" $truncatedDesc ")}\x1B[0m',
+          _out(
+            '    $pointer ${Ansi.boldText(theme.accent.text(cmdName))} ${theme.surface.bg}${theme.accent.text(" $truncatedDesc ")}\x1B[0m\n',
           );
         } else {
-          stdout.writeln(
-            '  ${theme.muted.text('│')} $pointer ${theme.secondary.text(cmdName)} ${theme.muted.text(truncatedDesc)}',
+          _out(
+            '    $pointer ${theme.secondary.text(cmdName)} ${theme.muted.text(truncatedDesc)}\n',
           );
         }
         extraLines++;
       }
 
-      stdout.writeln(
-        '  ${theme.muted.text('╰────────────────────────────────────────────────────────────╯')}',
-      );
-      stdout.write(
+      _out('  ${theme.muted.text('╰──${'─' * 35}')}\n');
+      _out(
         '  ${theme.muted.text('↑/↓ navigate  Tab/Enter select  Esc dismiss')}',
       );
       extraLines += 2;
@@ -729,20 +962,20 @@ class PromptReader {
       _paletteLines = extraLines;
 
       // Move cursor back up to prompt row
-      stdout.write('\x1B[${extraLines}A');
+      _out('\x1B[${extraLines}A');
     } else {
       _paletteLines = 0;
     }
 
     // 6. Move cursor vertically up to target row if needed
     if (endRow > targetRow) {
-      stdout.write('\x1B[${endRow - targetRow}A');
+      _out('\x1B[${endRow - targetRow}A');
     }
 
     // 7. Move cursor horizontally to target column
-    stdout.write('\r');
+    _out('\r');
     if (targetCol > 0) {
-      stdout.write('\x1B[${targetCol}C');
+      _out('\x1B[${targetCol}C');
     }
 
     // 8. Update tracked cursor row
@@ -758,14 +991,14 @@ class PromptReader {
     final cols = _terminalCols;
     final endRow = cursorPosition(prompt, buffer, buffer.length, cols).$1;
     if (endRow > _cursorRow) {
-      stdout.write('\x1B[${endRow - _cursorRow}B');
+      _out('\x1B[${endRow - _cursorRow}B');
     }
-    stdout.writeln();
+    _out('\n');
     final theme = NibTheme.current;
-    stdout.writeln(
-      '  ${theme.muted.text('Suggestions:')} ${options.map((o) => theme.accent.text(o)).join(theme.muted.text('  '))}',
+    _out(
+      '  ${theme.muted.text('Suggestions:')} ${options.map((o) => theme.accent.text(o)).join(theme.muted.text('  '))}\n',
     );
-    stdout.write(prompt + buffer);
+    _out(prompt + buffer);
     _cursorRow = endRow;
     _repaint(prompt, buffer, cursor);
   }

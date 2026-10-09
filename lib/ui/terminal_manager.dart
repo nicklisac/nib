@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dart_console/dart_console.dart';
+import 'screen_coordinator.dart';
 
 /// Bracketed paste mode (DEC 2004). Terminals that honour it wrap a paste in
 /// `ESC[200~ … ESC[201~`, which is the only reliable way to tell a paste from
@@ -83,6 +84,9 @@ class TerminalManager {
   /// reads through [nextKey], which never touches this field, so the draft is
   /// simply still there when the window reopens.
   String draft = '';
+
+  /// True when the user is actively composing on the bottom row.
+  bool isDrafting = false;
 
   /// Input events: [Key], [PasteBlob], and [AltKeyEvent].
   Stream<Object> get inputStream => _inputController.stream;
@@ -223,6 +227,9 @@ class TerminalManager {
     }
     try {
       stdout.write('\x1B[?25h'); // Show cursor
+    } catch (_) {}
+    try {
+      ScreenCoordinator.instance.deactivate();
     } catch (_) {}
   }
 

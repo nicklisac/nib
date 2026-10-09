@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import '../agent/agent.dart';
 import '../agent/context_meter.dart';
+import 'screen_coordinator.dart';
+import 'terminal_manager.dart';
 import 'theme.dart';
 
 /// Field priorities for the ambient line, highest first. When the row does not
@@ -10,6 +13,7 @@ import 'theme.dart';
 enum AmbientField {
   stateGlyph,
   runningTool,
+  providerModel,
   elapsed,
   tokenRate,
   queue,
@@ -89,6 +93,15 @@ class AmbientLine {
   /// transcript text, i.e. write a row Nib does not own (feel doctrine rule 1).
   bool _atRowStart = true;
 
+  /// Whether the row has been handed to the human's draft line.
+  ///
+  /// While a tool runs, the draft prompt opens on the row this line was drawing —
+  /// one row, one writer (#22). Without this the animation timer keeps emitting
+  /// `\r\x1B[2K` onto the row you are typing on, wiping each keystroke ~100ms after
+  /// you make it, which reads as having no text box at all. It re-arms at the next
+  /// boundary: a new iteration, or the next tool.
+  bool _yielded = false;
+
   AmbientLine({
     required this.agent,
     required this.meter,
@@ -102,7 +115,7 @@ class AmbientLine {
   /// must be at the start of a row. Drawing while the stream is mid-line would
   /// paint over transcript text — writing a row Nib does not own (feel doctrine
   /// rule 1) — so a partial line leaves the row hidden rather than overwritten.
-  bool get mayDraw => _visible && _atRowStart;
+  bool get mayDraw => _visible && !_yielded && _atRowStart;
 
   AmbientState get state => _state;
   String get runningTool => _runningTool;
@@ -159,7 +172,17 @@ class AmbientLine {
     _runningTool = '';
     _toolProgress = '';
     _stopwatch.stop();
-    hide();
+    if (ScreenCoordinator.instance.isActive) {
+      _show();
+    } else {
+      hide();
+    }
+  }
+
+  /// Sets the row to idle state and shows it if supported.
+  void showIdle() {
+    _state = AmbientState.idle;
+    _show();
   }
 
   /// The turn was interrupted. Stays up briefly with the one fact that matters:
@@ -176,7 +199,11 @@ class AmbientLine {
     _timer = Timer(const Duration(seconds: 4), () {
       if (_state == AmbientState.interrupted) {
         _state = AmbientState.idle;
-        hide();
+        if (ScreenCoordinator.instance.isActive) {
+          _show();
+        } else {
+          hide();
+        }
       }
     });
   }
@@ -215,6 +242,10 @@ class AmbientLine {
   }
 
   void _clearOwnRowIfDisplayed() {
+    if (ScreenCoordinator.instance.isActive) {
+      ScreenCoordinator.instance.renderStatus('');
+      return;
+    }
     if (_visible && _atRowStart) _clearRow();
   }
 
@@ -223,6 +254,31 @@ class AmbientLine {
   void resumeAfterLineWrite() {
     _atRowStart = true;
     _render();
+  }
+
+  /// Hands the row to the human's draft line and stops touching the screen.
+  ///
+  /// The row is cleared once here because at this moment it holds only this line's
+  /// own text; from now on the draft owns it, and any later redraw would land on
+  /// top of what the human is typing.
+  void yieldRowToHuman() {
+    if (ScreenCoordinator.instance.isActive) return;
+    _clearRow();
+    _yielded = true;
+    _visible = false;
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  /// Called when the human finishes drafting (e.g. message queued) and the tool
+  /// is still running. The ambient line reclaims row ownership and resumes animating.
+  void resumeRowFromHuman() {
+    _yielded = false;
+    _visible = true;
+    _atRowStart = true;
+    _render();
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) => _tick());
   }
 
   void hide() {
@@ -235,7 +291,18 @@ class AmbientLine {
   }
 
   void _show() {
+    // A boundary: turn start, tool start, or a tool finishing. The cursor is on a
+    // fresh row, so the line may own it again unless the human is drafting.
+    if (!ScreenCoordinator.instance.isActive &&
+        (TerminalManager.instance.isDrafting ||
+            TerminalManager.instance.draft.isNotEmpty)) {
+      _atRowStart = true;
+      _yielded = true;
+      _visible = false;
+      return;
+    }
     _atRowStart = true;
+    _yielded = false;
     _visible = true;
     _render();
     _timer?.cancel();
@@ -255,9 +322,19 @@ class AmbientLine {
   bool get _canWrite => _writesToTerminal ? stdout.hasTerminal : true;
 
   void _render() {
-    if (!mayDraw || !_canWrite) return;
+    if (!_canWrite) return;
+    if (ScreenCoordinator.instance.isActive) {
+      ScreenCoordinator.instance.renderStatus(
+        render(width: _terminalCols, includeModel: true),
+      );
+      return;
+    }
+    if (!mayDraw) return;
     _out('\r\x1B[2K${render(width: _terminalCols)}');
   }
+
+  /// Directly re-renders the current status line (e.g. after terminal resize).
+  void renderDirect() => _render();
 
   int get _terminalCols {
     try {
@@ -268,7 +345,7 @@ class AmbientLine {
 
   /// The row's content, computed without touching the terminal. Split out so the
   /// width behaviour is testable rather than eyeballed.
-  String render({int width = 80}) {
+  String render({int width = 80, bool includeModel = false}) {
     final theme = NibTheme.current;
     final fields = <AmbientField, String>{};
 
@@ -298,6 +375,17 @@ class AmbientLine {
       fields[AmbientField.runningTool] = theme.muted.text('idle');
     }
 
+    if (includeModel) {
+      final model = agent.provider.model;
+      final shortModel = model.length > 22
+          ? '${model.substring(0, 19)}...'
+          : model;
+      final provName = agent.provider.name;
+      final cwd = p.basename(Directory.current.path);
+      fields[AmbientField.providerModel] =
+          '${theme.accent.text(provName)} ${theme.secondary.text(shortModel)} ${theme.muted.text('📂 $cwd')}';
+    }
+
     if (streaming && _stopwatch.isRunning) {
       fields[AmbientField.elapsed] = theme.muted.text(
         _formatDuration(_stopwatch.elapsed),
@@ -313,9 +401,10 @@ class AmbientLine {
       }
     }
 
+    final hasDraft = TerminalManager.instance.draft.trim().isNotEmpty;
     if (_queuedCount > 0) {
       fields[AmbientField.queue] = theme.info.text('⏎ $_queuedCount queued');
-    } else if (_draftKept) {
+    } else if (_draftKept || hasDraft) {
       fields[AmbientField.queue] = theme.warning.text('draft kept');
     }
 

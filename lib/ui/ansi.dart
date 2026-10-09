@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 /// ANSI escape codes and terminal styling utilities.
 class Ansi {
@@ -38,29 +39,41 @@ class Ansi {
   static String redText(String text) => style(text, red);
   static String grayText(String text) => style(text, gray);
 
-  /// Minimal Pi & Tau inspired banner for Nib
+  /// Welcoming banner with session timestamp and strong visual break
   static String banner({
     required String model,
     required String provider,
     required String workspace,
+    DateTime? timestamp,
   }) {
+    final now = timestamp ?? DateTime.now();
+    final stamp =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+
+    var cols = 80;
+    try {
+      if (stdout.hasTerminal) cols = stdout.terminalColumns;
+    } catch (_) {}
+
+    final headerText = ' ✒   NIB · Session started $stamp ';
+    final ruleLen = max(10, cols - headerText.length - 6);
+
     final buf = StringBuffer();
     buf.writeln();
     buf.writeln(
-      '${boldText(brightCyanText('  ✒   NIB'))} ${dimText('· Dart Terminal Coding Agent (in the style of Pi & Tau)')}',
+      '  ${grayText('╭──')}${boldText(brightCyanText(headerText))}${grayText('─' * ruleLen)}',
     );
     buf.writeln(
-      '  ${dimText('model:')} ${boldText(cyanText(model))} ${dimText('· provider:')} ${yellowText(provider)}',
+      '    ${dimText('model:')} ${boldText(cyanText(model))} ${dimText('· provider:')} ${yellowText(provider)}',
     );
-    buf.writeln('  ${dimText('workspace:')} ${grayText(workspace)}');
+    buf.writeln('    ${dimText('workspace:')} ${grayText(workspace)}');
     buf.writeln(
-      '  ${dimText('type')} ${boldText('/help')} ${dimText('for slash commands, or ask anything to start.')}',
+      '    ${dimText('type')} ${boldText('/help')} ${dimText('for slash commands, or ask anything to start.')}',
     );
-    buf.writeln(
-      dimText(
-        '  ─────────────────────────────────────────────────────────────────',
-      ),
-    );
+    final bottomRule = '╰──${'─' * max(10, ruleLen + headerText.length - 1)}';
+    buf.writeln('  ${grayText(bottomRule)}');
+    buf.writeln();
     return buf.toString();
   }
 }

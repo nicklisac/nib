@@ -91,7 +91,7 @@ class SessionPicker {
   ) {
     stdout.writeln();
     stdout.writeln(
-      '  ${theme.muted.text('╭─')} ${theme.accent.text('Select Session to Resume')} ${theme.muted.text('─────────────────────────────────────────╮')}',
+      '  ${theme.muted.text('╭──')} ${theme.accent.text('Select Session to Resume')} ${theme.muted.text('─' * 10)}',
     );
 
     for (int i = 0; i < items.length; i++) {
@@ -116,18 +116,16 @@ class SessionPicker {
 
       if (isSelected) {
         stdout.writeln(
-          '  ${theme.muted.text('│')} $pointer $indexStr ${theme.accent.text(dateStr)} $turnsStr ${theme.surface.bg}${theme.accent.text(" $truncatedPreview ")}\x1B[0m$currentTag',
+          '    $pointer $indexStr ${theme.accent.text(dateStr)} $turnsStr ${theme.surface.bg}${theme.accent.text(" $truncatedPreview ")}\x1B[0m$currentTag',
         );
       } else {
         stdout.writeln(
-          '  ${theme.muted.text('│')} $pointer $indexStr ${theme.muted.text(dateStr)} $turnsStr ${theme.primary.text(truncatedPreview)}$currentTag',
+          '    $pointer $indexStr ${theme.muted.text(dateStr)} $turnsStr ${theme.primary.text(truncatedPreview)}$currentTag',
         );
       }
     }
 
-    stdout.writeln(
-      '  ${theme.muted.text('╰─────────────────────────────────────────────────────────────────╯')}',
-    );
+    stdout.writeln('  ${theme.muted.text('╰──${'─' * 35}')}');
     stdout.writeln(
       '  ${theme.muted.text('Use ↑/↓ arrows to navigate, Enter to load, 1-${items.length} to select, Esc/q to cancel')}',
     );

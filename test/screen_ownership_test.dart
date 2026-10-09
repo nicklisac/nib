@@ -6,6 +6,7 @@ import 'package:nib/agent/session.dart';
 import 'package:nib/ai/chat_message.dart';
 import 'package:nib/ai/mock_provider.dart';
 import 'package:nib/ui/ambient_line.dart';
+import 'package:nib/ui/cli_ui.dart';
 import 'package:nib/ui/prompt_reader.dart';
 import 'package:nib/ui/terminal_manager.dart';
 import 'package:dart_console/dart_console.dart';
@@ -307,6 +308,52 @@ void main() {
       line.recordToken();
       expect(writes, isEmpty);
     });
+
+    test('yieldRowToHuman clears the row and prevents redrawing', () {
+      final writes = <String>[];
+      final agent = _testAgent();
+      final line = AmbientLine(
+        agent: agent,
+        meter: agent.meter,
+        out: writes.add,
+      );
+      line.startTurn();
+      line.showTool('bash');
+      writes.clear();
+
+      line.yieldRowToHuman();
+      expect(writes, contains('\r\x1B[2K'));
+      expect(line.mayDraw, isFalse);
+
+      writes.clear();
+      line.showToolProgress('compiling...');
+      expect(
+        writes,
+        isEmpty,
+        reason: 'draft owns the row, ambient line must not draw',
+      );
+
+      line.resumeRowFromHuman();
+      expect(line.mayDraw, isTrue);
+      expect(
+        writes,
+        isNotEmpty,
+        reason: 'resumed row allows ambient drawing again',
+      );
+    });
+
+    test(
+      'an unsubmitted draft in TerminalManager shows draft kept on ambient line',
+      () {
+        final agent = _testAgent();
+        final line = AmbientLine(agent: agent, meter: agent.meter);
+        line.startTurn();
+        TerminalManager.instance.draft = 'half-typed thought';
+        final rendered = line.render(width: 100);
+        expect(rendered, contains('draft kept'));
+        TerminalManager.instance.draft = '';
+      },
+    );
   });
 
   group('Rule 4 — Nib never shows an estimate as a measurement', () {
@@ -469,6 +516,102 @@ void main() {
           reason: '"$forbidden" is the dock\'s, not the ambient line\'s',
         );
       }
+    });
+  });
+
+  group('Unified mid-turn drafting and transcript coordination', () {
+    test(
+      'eraseCurrentLine and repaintCurrentLine cleanly toggle suspension',
+      () {
+        final writes = <String>[];
+        final reader = PromptReader(out: writes.add);
+
+        // Not drafting: erase/repaint do nothing
+        expect(reader.isDrafting, isFalse);
+        reader.eraseCurrentLine();
+        expect(writes, isEmpty);
+        reader.repaintCurrentLine();
+        expect(writes, isEmpty);
+      },
+    );
+
+    test('AmbientLine._show respects TerminalManager.instance.isDrafting', () {
+      final writes = <String>[];
+      final agent = _testAgent();
+      final line = AmbientLine(
+        agent: agent,
+        meter: agent.meter,
+        out: writes.add,
+      );
+
+      TerminalManager.instance.isDrafting = true;
+      line.startTurn();
+      expect(line.mayDraw, isFalse);
+
+      line.showTool('bash');
+      expect(line.mayDraw, isFalse);
+
+      TerminalManager.instance.isDrafting = false;
+      line.resumeRowFromHuman();
+      expect(line.mayDraw, isTrue);
+    });
+
+    test(
+      'AmbientLine shows queued indicator when message is enqueued mid-turn',
+      () {
+        final agent = _testAgent();
+        final line = AmbientLine(agent: agent, meter: agent.meter);
+        line.startTurn();
+
+        line.showComposition(queued: 'check status');
+        final rendered = line.render(width: 100);
+        expect(rendered, contains('⏎ 1 queued'));
+
+        line.showComposition(queued: 'check status\nanother follow-up');
+        final rendered2 = line.render(width: 100);
+        expect(rendered2, contains('⏎ 2 queued'));
+      },
+    );
+  });
+
+  group('Card boundary and wrapping formatting', () {
+    test('CliUi.wrapText wraps text on word boundaries without overflow', () {
+      const text =
+          'Now here is me testing a long message. I will keep typing so the text wraps.';
+      final wrapped = CliUi.wrapText(text, 30);
+      expect(wrapped.length, greaterThan(1));
+      for (final line in wrapped) {
+        expect(line.length, lessThanOrEqualTo(30));
+      }
+      expect(wrapped.join(' '), equals(text));
+    });
+
+    test('CliUi.wrapText chunks words that exceed max width', () {
+      final longWord = 'a' * 50;
+      final wrapped = CliUi.wrapText(longWord, 20);
+      expect(wrapped.length, equals(3));
+      expect(wrapped[0], equals('a' * 20));
+      expect(wrapped[1], equals('a' * 20));
+      expect(wrapped[2], equals('a' * 10));
+    });
+
+    test('renderUserTurn prints card with gutters and bounded line lengths', () {
+      final writes = <String>[];
+      final agent = _testAgent();
+      final ui = CliUi(agent, null, writes.add);
+
+      ui.renderUserTurn(
+        'Now here is me testing a long message. I will keep typing so the text wraps. '
+        'I need to keep adding text so that the wrap will occur on one line so I can see how it looks.',
+      );
+
+      expect(writes.length, greaterThanOrEqualTo(4));
+      final combined = writes.join('');
+      expect(combined, contains('╭──'));
+      expect(combined, contains('✒'));
+      expect(combined, contains('You'));
+      expect(combined, contains('╰──'));
+      expect(combined, isNot(contains('│')));
     });
   });
 }

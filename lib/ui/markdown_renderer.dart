@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:dart_console/dart_console.dart';
 import 'package:val_highlight/languages/all.dart';
 import 'package:val_highlight/val_highlight.dart';
@@ -338,28 +339,26 @@ class StreamingMarkdownPrinter {
       if (!_inCodeBlock) {
         _inCodeBlock = true;
         _codeBlockLang = trimmed.substring(3).trim().toLowerCase();
-        final langTag = _codeBlockLang.isNotEmpty
-            ? ' $_codeBlockLang '
-            : ' code ';
+        final langTag = _codeBlockLang.isNotEmpty ? _codeBlockLang : 'code';
+        final topUsed = 9 + langTag.length;
+        final ruleLen = max(2, 40 - topUsed);
         _out(
-          '  ${theme.muted.text('╭─')}${theme.accent.text(langTag)}${theme.muted.text('─────────────────────────────────────────╮')}\n',
+          '  ${theme.muted.text('╭──')} ${theme.accent.text(langTag)} ${theme.muted.text('─' * ruleLen)}\n',
         );
       } else {
         _inCodeBlock = false;
         _codeBlockLang = '';
-        _out(
-          '  ${theme.muted.text('╰──────────────────────────────────────────────────╯')}\n',
-        );
+        _out('  ${theme.muted.text('╰──${'─' * 35}')}\n');
       }
       return;
     }
 
     if (_inCodeBlock) {
       if (line.isEmpty) {
-        _out('  ${theme.muted.text('│')}\n');
+        _out('\n');
       } else {
         _out(
-          '  ${theme.muted.text('│')} ${MarkdownRenderer.highlightCodeLine(line, _codeBlockLang, theme)}\n',
+          '    ${MarkdownRenderer.highlightCodeLine(line, _codeBlockLang, theme)}\n',
         );
       }
       return;
@@ -370,9 +369,7 @@ class StreamingMarkdownPrinter {
         trimmed == '***' ||
         trimmed == '___' ||
         RegExp(r'^-{3,}$').hasMatch(trimmed)) {
-      _out(
-        '\n  ${theme.muted.text('──────────────────────────────────────────────────')}\n',
-      );
+      _out('\n  ${theme.muted.text('─' * 38)}\n');
       return;
     }
 

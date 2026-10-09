@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:dart_console/dart_console.dart';
 import '../agent/agent.dart';
 import '../agent/approval_manager.dart';
@@ -9,6 +10,7 @@ import 'ansi.dart';
 import 'autocomplete.dart';
 import 'markdown_renderer.dart';
 import 'prompt_reader.dart';
+import 'screen_coordinator.dart';
 import 'slash_commands.dart';
 import 'status_bar.dart';
 import 'terminal_manager.dart';
@@ -39,10 +41,6 @@ class CliUi {
   DateTime? _lastSigintTime;
   StreamSubscription<ProcessSignal>? _sigintSub;
 
-  /// Whether the cursor currently sits at the start of a row, which is the only
-  /// place the ambient line may be drawn.
-  bool _atRowStart = true;
-
   /// Set when the running turn was interrupted. Decides what happens to a
   /// queued message: an interrupted turn restores it as a draft rather than
   /// sending it, because Esc means stop.
@@ -51,8 +49,11 @@ class CliUi {
   /// The draft held while a turn was interrupted, offered back at the prompt.
   String _resumedDraft = '';
 
-  CliUi(this.agent, [this.config])
-    : _slashHandler = SlashCommandHandler(agent, config) {
+  final void Function(String text)? _outSink;
+
+  CliUi(this.agent, [this.config, void Function(String text)? out])
+    : _outSink = out,
+      _slashHandler = SlashCommandHandler(agent, config) {
     _promptReader.onCompose = (queued) {
       _ambient.showComposition(queued: queued);
     };
@@ -63,15 +64,13 @@ class CliUi {
       // first approval of a session, and awaiting a completer nobody completes
       // would hang the prompt.
       if (_draftWindowOpen) {
-        _closeDraftWindow();
-        await _draftReaderExited.future;
+        await _stopTurnInput();
       }
       _ambient.hide();
     };
     ApprovalManager.instance.onApprovalEnd = () {
-      _atRowStart = true;
       // Still inside the same tool execution, so the human still owns the row.
-      if (_isExecutingTurn && !_turnInterrupted) _openDraftWindow();
+      if (_isExecutingTurn && !_turnInterrupted) _startTurnInput();
     };
   }
 
@@ -79,81 +78,111 @@ class CliUi {
   Future<void> run() async {
     _setupSigintHandler();
 
-    // Print welcoming Nib banner
-    stdout.write(
-      Ansi.banner(
-        model: agent.provider.model,
-        provider: agent.provider.name,
-        workspace: Directory.current.path,
-      ),
-    );
-    _atRowStart = true;
-
-    while (true) {
-      final theme = NibTheme.current;
-
-      // The dock: provider / model / workspace. Printed once with the prompt and
-      // left to scroll away — that is correct behaviour, not a bug. It names the
-      // context of the exchange below it and follows that exchange into history.
-      _writeLine(StatusBar.render(agent));
-
-      final promptString =
-          '${theme.accent.text('nib')} ${theme.secondary.text('❯')} ';
-      final submitted = await _readTurn(promptString);
-
-      // Cannot happen at the idle prompt — nothing closes a window there — but a
-      // stray close must re-prompt rather than end the session.
-      if (submitted != null && submitted.kind == SubmitKind.windowEnded) {
-        continue;
-      }
-
-      if (submitted == null) {
-        // EOF (Ctrl+D)
-        _writeLine('');
-        _writeLine(theme.muted.text('Session saved. Goodbye!'));
-        break;
-      }
-
-      final input = submitted.text;
-      final trimmed = input.trim();
-
-      if (submitted.kind == SubmitKind.queue) {
-        // Composed during a turn is impossible at the idle prompt, but Alt+Enter
-        // there means the same thing: hold this, it is not for right now.
-        _promptReader.enqueue(trimmed);
-        _ambient.showComposition(queued: _promptReader.queued);
-        continue;
-      }
-
-      if (trimmed.isEmpty) {
-        if (submitted.kind == SubmitKind.flushQueue) {
-          await _submitQueued();
+    StreamSubscription<ProcessSignal>? sigwinchSub;
+    Timer? resizeDebounce;
+    if (ScreenCoordinator.instance.isSupported) {
+      ScreenCoordinator.instance.activate();
+      try {
+        if (!Platform.isWindows) {
+          sigwinchSub = ProcessSignal.sigwinch.watch().listen((_) {
+            resizeDebounce?.cancel();
+            resizeDebounce = Timer(const Duration(milliseconds: 50), () {
+              ScreenCoordinator.instance.updateTerminalSize();
+              _ambient.renderDirect();
+              _promptReader.repaintCurrentLine();
+            });
+          });
         }
-        continue;
-      }
-
-      // Check slash commands (/help, /clear, /undo, /theme, etc.)
-      if (await _slashHandler.handle(trimmed)) {
-        // A skill the human invoked runs as a normal turn, with the skill body
-        // already loaded into the prompt.
-        final invocation = _slashHandler.pendingInvocation;
-        if (invocation != null) {
-          _slashHandler.pendingInvocation = null;
-          await _executeAgentTurn(invocation);
-          await _afterTurn();
-        }
-        continue;
-      }
-
-      // Automatically expand @file mentions into prompt context
-      final expandedPrompt = await AutoCompleter.expandFileMentions(trimmed);
-
-      // Execute agent turn with live streaming callbacks
-      await _executeAgentTurn(expandedPrompt);
-      await _afterTurn();
+      } catch (_) {}
     }
 
-    await _sigintSub?.cancel();
+    try {
+      // Print welcoming Nib banner
+      _writeStreamText(
+        Ansi.banner(
+          model: agent.provider.model,
+          provider: agent.provider.name,
+          workspace: Directory.current.path,
+        ),
+      );
+
+      _ambient.showIdle();
+
+      while (true) {
+        final theme = NibTheme.current;
+
+        // The dock is printed once with the prompt only if ScreenCoordinator is inactive.
+        // When active, provider, model, and folder are pinned in the bottom static bar.
+        if (!ScreenCoordinator.instance.isActive) {
+          _writeLine(StatusBar.render(agent));
+        }
+
+        final promptString = ScreenCoordinator.instance.isActive
+            ? '    ${theme.secondary.text('❯')} '
+            : '  ${theme.accent.text('✒')}  ${theme.secondary.text('❯')} ';
+        final submitted = await _readTurn(promptString);
+
+        // Cannot happen at the idle prompt — nothing closes a window there — but a
+        // stray close must re-prompt rather than end the session.
+        if (submitted != null && submitted.kind == SubmitKind.windowEnded) {
+          continue;
+        }
+
+        if (submitted == null) {
+          // EOF (Ctrl+D)
+          _writeLine('');
+          _writeLine(theme.muted.text('Session saved. Goodbye!'));
+          break;
+        }
+
+        final input = submitted.text;
+        final trimmed = input.trim();
+
+        if (submitted.kind == SubmitKind.queue) {
+          // Composed during a turn is impossible at the idle prompt, but Alt+Enter
+          // there means the same thing: hold this, it is not for right now.
+          _promptReader.enqueue(trimmed);
+          _ambient.showComposition(queued: _promptReader.queued);
+          continue;
+        }
+
+        if (trimmed.isEmpty) {
+          if (submitted.kind == SubmitKind.flushQueue) {
+            await _submitQueued(showDock: false);
+          }
+          continue;
+        }
+
+        if (ScreenCoordinator.instance.isActive) {
+          renderUserTurn(trimmed);
+        }
+
+        // Check slash commands (/help, /clear, /undo, /theme, etc.)
+        if (await _slashHandler.handle(trimmed)) {
+          // A skill the human invoked runs as a normal turn, with the skill body
+          // already loaded into the prompt.
+          final invocation = _slashHandler.pendingInvocation;
+          if (invocation != null) {
+            _slashHandler.pendingInvocation = null;
+            await _executeAgentTurn(invocation);
+            await _afterTurn();
+          }
+          continue;
+        }
+
+        // Automatically expand @file mentions into prompt context
+        final expandedPrompt = await AutoCompleter.expandFileMentions(trimmed);
+
+        // Execute agent turn with live streaming callbacks
+        await _executeAgentTurn(expandedPrompt);
+        await _afterTurn();
+      }
+    } finally {
+      ScreenCoordinator.instance.deactivate();
+      resizeDebounce?.cancel();
+      await sigwinchSub?.cancel();
+      await _sigintSub?.cancel();
+    }
   }
 
   /// Sets up graceful SIGINT (Ctrl+C) handling.
@@ -179,7 +208,7 @@ class CliUi {
             );
             final theme = NibTheme.current;
             stdout.write(
-              '${theme.accent.text('nib')} ${theme.secondary.text('❯')} ',
+              '${theme.accent.text('✒')}  ${theme.secondary.text('❯')} ',
             );
           }
         }
@@ -195,17 +224,20 @@ class CliUi {
     var initial = _resumedDraft;
     _resumedDraft = '';
 
-    if (initial.isNotEmpty) {
-      final theme = NibTheme.current;
-      _writeLine(
-        '  ${theme.warning.text('⚠ Turn interrupted.')} ${theme.muted.text('Draft kept at the prompt.')} ${theme.muted.text('⏎ on an empty line sends it.')}',
-      );
-    } else if (_promptReader.hasQueued) {
-      final theme = NibTheme.current;
-      _writeLine(
-        '  ${theme.muted.text('⏎ ${_promptReader.queued.split('\n').length} queued — ⏎ on an empty line sends it.')}',
-      );
+    if (!ScreenCoordinator.instance.isActive) {
+      if (_turnInterrupted && initial.isNotEmpty) {
+        final theme = NibTheme.current;
+        _writeLine(
+          '  ${theme.warning.text('⚠ Turn interrupted.')} ${theme.muted.text('Draft kept at the prompt.')} ${theme.muted.text('⏎ on an empty line sends it.')}',
+        );
+      } else if (_promptReader.hasQueued) {
+        final theme = NibTheme.current;
+        _writeLine(
+          '  ${theme.muted.text('⏎ ${_promptReader.queued.split('\n').length} queued — ⏎ on an empty line sends it.')}',
+        );
+      }
     }
+    _turnInterrupted = false;
 
     final first = await _promptReader.readSubmit(
       prompt: promptString,
@@ -277,10 +309,18 @@ class CliUi {
 
   /// Submits the queued message as the next turn. It never enters the transcript
   /// as an assistant statement — it is a user message like any other.
-  Future<void> _submitQueued() async {
-    final queued = _promptReader.takeQueued();
-    if (queued.trim().isEmpty) return;
+  Future<void> _submitQueued({bool showDock = true}) async {
+    final queued = _promptReader.takeNextQueued();
+    if (queued.trim().isEmpty) {
+      ScreenCoordinator.instance.setQueued(const []);
+      return;
+    }
     _promptReader.addToHistory(queued);
+    ScreenCoordinator.instance.setQueued(_promptReader.queuedMessages);
+    if (showDock && !ScreenCoordinator.instance.isActive) {
+      _writeLine(StatusBar.render(agent));
+    }
+    renderUserTurn(queued.trim());
     final expanded = await AutoCompleter.expandFileMentions(queued.trim());
     await _executeAgentTurn(expanded);
     await _afterTurn();
@@ -293,9 +333,18 @@ class CliUi {
   /// stop and auto-sending a moment later is sending something that was not meant
   /// for that moment.
   Future<void> _afterTurn() async {
-    if (!_promptReader.hasQueued) return;
+    if (!_promptReader.hasQueued) {
+      ScreenCoordinator.instance.setQueued(const []);
+      return;
+    }
     if (_turnInterrupted) {
-      _resumedDraft = _promptReader.takeQueued();
+      final all = _promptReader.takeAllQueued();
+      ScreenCoordinator.instance.setQueued(const []);
+      if (all.isNotEmpty) {
+        _resumedDraft = _resumedDraft.isNotEmpty
+            ? '${all.join('\n')}\n$_resumedDraft'
+            : all.join('\n');
+      }
       return;
     }
     await _submitQueued();
@@ -313,15 +362,27 @@ class CliUi {
   /// reclaiming it afterwards. Every write that does not end with a newline must
   /// go through [stdout.write] directly with the row suspended.
   void _writeLine(String line) {
-    // Mid-turn the row must survive the line; at rest there is no row to keep.
-    if (_isExecutingTurn) {
+    if (ScreenCoordinator.instance.isActive) {
+      ScreenCoordinator.instance.writeTranscript('$line\n');
+      return;
+    }
+    if (_promptReader.isDrafting) {
+      _promptReader.eraseCurrentLine();
+    } else if (_isExecutingTurn) {
       _ambient.clearForTranscriptWrite();
     } else {
       _ambient.hide();
     }
-    stdout.writeln(line);
-    _atRowStart = true;
-    _ambient.resumeAfterLineWrite();
+    if (_outSink != null) {
+      _outSink('$line\n');
+    } else {
+      stdout.writeln(line);
+    }
+    if (_promptReader.isDrafting) {
+      _promptReader.repaintCurrentLine();
+    } else if (_isExecutingTurn) {
+      _ambient.resumeAfterLineWrite();
+    }
   }
 
   /// The one writer of the ambient row during streaming: wrap the markdown
@@ -329,28 +390,54 @@ class CliUi {
   /// the write left the cursor at the start of a row. A partial line leaves the
   /// row hidden rather than painted over text — the point of the rule.
   void _writeStreamText(String text) {
-    _closeDraftWindow();
-    _ambient.suspendForInlineWrite();
-    stdout.write(text);
-    _atRowStart = text.endsWith('\n');
-    if (_atRowStart) _ambient.resumeAfterLineWrite();
+    if (ScreenCoordinator.instance.isActive) {
+      ScreenCoordinator.instance.writeTranscript(text);
+      return;
+    }
+    final atRowStart = text.endsWith('\n');
+    if (_promptReader.isDrafting) {
+      _promptReader.eraseCurrentLine();
+    } else if (_isExecutingTurn) {
+      _ambient.clearForTranscriptWrite();
+    } else {
+      _ambient.hide();
+    }
+    if (_outSink != null) {
+      _outSink(text);
+    } else {
+      stdout.write(text);
+    }
+    if (_promptReader.isDrafting) {
+      if (atRowStart) _promptReader.repaintCurrentLine();
+    } else if (_isExecutingTurn) {
+      if (atRowStart) _ambient.resumeAfterLineWrite();
+    }
   }
 
   /// The single interrupt path: Esc or Ctrl+C, and nothing else. It stops the
   /// turn, keeps the draft, and leaves any queued message for the human to
   /// re-send deliberately.
   void _interruptTurn(String keyName) {
-    if (!_isExecutingTurn) return;
+    if (!_isExecutingTurn || _turnInterrupted) return;
     _turnInterrupted = true;
     agent.cancel();
 
     final draft = TerminalManager.instance.draft;
-    final hadDraft = draft.trim().isNotEmpty || _promptReader.hasQueued;
-    if (hadDraft) {
-      // A mid-turn draft becomes the queue slot, which an interrupt restores as a
-      // draft at the prompt. Nothing typed is discarded (feel doctrine rule 2).
-      if (draft.trim().isNotEmpty) _promptReader.enqueue(draft);
+    final allQueued = _promptReader.takeAllQueued();
+    ScreenCoordinator.instance.setQueued(const []);
+    final hadDraft = draft.trim().isNotEmpty || allQueued.isNotEmpty;
+    final parts = <String>[];
+    for (final q in allQueued) {
+      if (q.trim().isNotEmpty) {
+        parts.add(q.trim());
+      }
+    }
+    if (draft.trim().isNotEmpty) {
+      parts.add(draft.trim());
       TerminalManager.instance.draft = '';
+    }
+    if (parts.isNotEmpty) {
+      _resumedDraft = parts.join('\n');
     }
     TerminalManager.instance.clearBuffer();
 
@@ -374,29 +461,21 @@ class CliUi {
 
     _writeLine('');
     _ambient.startTurn();
+    _startTurnInput();
 
     final callbacks = AgentCallbacks(
       onThoughtDelta: (thought) {
-        _closeDraftWindow();
         _ambient.recordToken();
         if (!_inThoughtBlock) {
-          _ambient.clearForTranscriptWrite();
-          stdout.write('  ${theme.muted.text('💭 ')}');
-          _atRowStart = false;
+          _writeStreamText('  ${theme.muted.text('💭 ')}');
           _inThoughtBlock = true;
         }
-        _ambient.suspendForInlineWrite();
-        stdout.write(theme.muted.text(thought));
-        _atRowStart = thought.endsWith('\n');
-        if (_atRowStart) _ambient.resumeAfterLineWrite();
+        _writeStreamText(theme.muted.text(thought));
       },
       onTextDelta: (text) {
         if (_inThoughtBlock) {
-          _ambient.clearForTranscriptWrite();
-          stdout.writeln();
-          stdout.writeln();
-          _atRowStart = true;
-          _ambient.resumeAfterLineWrite();
+          _writeLine('');
+          _writeLine('');
           _inThoughtBlock = false;
         }
         markdownPrinter.addDelta(text);
@@ -404,40 +483,36 @@ class CliUi {
       onToolCallStarted: (call) {
         markdownPrinter.flush();
         if (_inThoughtBlock) {
-          _ambient.clearForTranscriptWrite();
-          stdout.writeln();
-          stdout.writeln();
-          _atRowStart = true;
+          _writeLine('');
+          _writeLine('');
           _inThoughtBlock = false;
         }
         final argsSummary = _formatToolArgsSummary(call.name, call.arguments);
-        // The divider at the top of the human-owned window: one, and it is the
-        // tool card's own rule. Its length follows the terminal, not a constant.
-        _ambient.clearForTranscriptWrite();
-        stdout.writeln(
-          '  ${theme.muted.text('╭─')} ${theme.warning.text('⚙')} ${theme.accent.text(call.name)} ${theme.secondary.text(argsSummary)} ${theme.muted.text('─' * _ruleFill(4 + 2 + call.name.length + argsSummary.length))}',
+        final topUsed = 9 + call.name.length;
+        final topRule = max(2, 40 - topUsed);
+        _writeLine(
+          '  ${theme.muted.text('╭──')} ${theme.warning.text('⚙')} ${theme.accent.text(call.name)} ${theme.muted.text('─' * topRule)}',
         );
-        _atRowStart = true;
-        // Ownership flips to the human here. This is the window in which the
-        // draft line opens on the same reader path as the idle prompt; nothing is
-        // being written, so there is nothing to collide with.
+        if (argsSummary.isNotEmpty) {
+          for (final line in argsSummary.split('\n')) {
+            _writeLine('    ${theme.secondary.text(line)}');
+          }
+        }
         _ambient.showTool(call.name);
-        _openDraftWindow();
       },
       onToolCallFinished: (call, result, duration) {
-        _closeDraftWindow();
         final ms = duration.inMilliseconds;
         final preview = _formatResultPreview(call.name, result);
-        _ambient.clearForTranscriptWrite();
         for (final line in preview) {
-          stdout.writeln('  ${theme.muted.text('│')}  $line');
+          _writeLine('    $line');
         }
-        stdout.writeln(
-          '  ${theme.muted.text('╰─')} ${theme.success.text('✔')} ${theme.muted.text('done (${ms}ms)')} ${theme.muted.text('─' * _ruleFill(4 + 2 + call.name.length + 12))}',
+        final doneText = 'done (${ms}ms)';
+        final bottomUsed = 9 + doneText.length;
+        final bottomRule = max(2, 40 - bottomUsed);
+        _writeLine(
+          '  ${theme.muted.text('╰──')} ${theme.success.text('✔')} ${theme.muted.text(doneText)} ${theme.muted.text('─' * bottomRule)}',
         );
-        stdout.writeln();
-        _atRowStart = true;
-        _ambient.resumeAfterLineWrite();
+        _writeLine('');
         _ambient.resumeStreaming();
       },
       onToolProgress: (call, line) {
@@ -447,19 +522,14 @@ class CliUi {
         if (clean.isNotEmpty) _ambient.showToolProgress(clean);
       },
       onError: (error) {
-        _closeDraftWindow();
         markdownPrinter.flush();
         if (_inThoughtBlock) {
-          _ambient.clearForTranscriptWrite();
-          stdout.writeln();
-          _atRowStart = true;
+          _writeLine('');
           _inThoughtBlock = false;
         }
-        _ambient.clearForTranscriptWrite();
-        stdout.writeln();
-        stdout.writeln('  ${theme.error.text('✖ Error:')} $error');
-        stdout.writeln();
-        _atRowStart = true;
+        _writeLine('');
+        _writeLine('  ${theme.error.text('✖ Error:')} $error');
+        _writeLine('');
         _ambient.resumeStreaming();
       },
     );
@@ -493,87 +563,152 @@ class CliUi {
       markdownPrinter.flush();
       _writeLine('  ${theme.error.text('✖ Exception:')} $e');
     } finally {
-      _closeDraftWindow();
-      // Harvest anything still being composed. A tool can finish with a draft in
-      // hand and no further tool to reopen the window, and the idle prompt would
-      // otherwise overwrite it (feel doctrine rule 2). The queue slot is where it
-      // waits: delivered if the turn ended normally, restored if it was stopped.
+      await _stopTurnInput();
       final stranded = TerminalManager.instance.draft;
       if (stranded.trim().isNotEmpty) {
-        _promptReader.enqueue(stranded);
+        _resumedDraft = stranded;
         TerminalManager.instance.draft = '';
       }
       await inputSub?.cancel();
       _ambient.endTurn();
       markdownPrinter.flush();
       _isExecutingTurn = false;
-      // Buffered *keys* may be stale and are discarded; the draft is not a key and
-      // is deliberately left alone.
       TerminalManager.instance.clearBuffer();
     }
 
     _writeLine('');
+    _writeLine('  ${theme.muted.text('─' * 38)}');
+    _writeLine('');
   }
 
-  /// Opens the human-owned window: a tool is running, nothing is being written,
-  /// so the draft line may open at the current cursor on the idle prompt's own
-  /// reader path. It is fire-and-forget — the turn does not wait for it — and it
-  /// closes itself the moment the stream needs the screen back.
-  void _openDraftWindow() {
-    if (!stdin.hasTerminal || _draftWindowOpen) return;
-    TerminalManager.instance.clearEndWindowSentinels();
-    _draftWindowOpen = true;
-    unawaited(_readDraftWindow());
+  /// Prominently renders the human's message into the scrolling transcript
+  /// with a 40-column corner cap header and footer, indented text, and no
+  /// left vertical borders so resizing reflows naturally.
+  void renderUserTurn(String text) {
+    final theme = NibTheme.current;
+    _writeLine('');
+    _writeLine(
+      '  ${theme.muted.text('╭──')} ${theme.accent.text('✒')} ${Ansi.boldText(theme.primary.text('You'))} ${theme.muted.text('─' * 28)}',
+    );
+    for (final line in text.split('\n')) {
+      _writeLine('    ${Ansi.boldText(line)}');
+    }
+    _writeLine('  ${theme.muted.text('╰──${'─' * 35}')}');
+    _writeLine('');
   }
 
-  /// Hands the screen back to the stream. The reader is released with a sentinel
-  /// rather than left parked, because a parked reader holds the row the transcript
-  /// is about to write. A half-composed draft survives the handover: it lives on
-  /// [TerminalManager.draft], where neither a stale-key purge nor a window close
-  /// can reach it, and the next window reopens with it.
-  void _closeDraftWindow() {
-    if (!_draftWindowOpen) return;
-    _draftWindowOpen = false;
-    TerminalManager.instance.endWindow();
+  /// Word-wraps text paragraphs to fit within [width] characters.
+  static List<String> wrapText(String text, int width) =>
+      _wrapText(text, width);
+
+  static List<String> _wrapText(String text, int width) {
+    final result = <String>[];
+    for (final paragraph in text.split('\n')) {
+      if (paragraph.length <= width) {
+        result.add(paragraph);
+        continue;
+      }
+      final words = paragraph.split(' ');
+      final current = StringBuffer();
+      for (final word in words) {
+        if (current.isEmpty) {
+          if (word.length <= width) {
+            current.write(word);
+          } else {
+            var w = word;
+            while (w.length > width) {
+              result.add(w.substring(0, width));
+              w = w.substring(width);
+            }
+            current.write(w);
+          }
+        } else if (current.length + 1 + word.length <= width) {
+          current.write(' $word');
+        } else {
+          result.add(current.toString());
+          current.clear();
+          var w = word;
+          while (w.length > width) {
+            result.add(w.substring(0, width));
+            w = w.substring(width);
+          }
+          current.write(w);
+        }
+      }
+      if (current.isNotEmpty) {
+        result.add(current.toString());
+      }
+    }
+    return result;
   }
 
   bool _draftWindowOpen = false;
   Completer<void> _draftReaderExited = Completer<void>();
 
+  void _startTurnInput() {
+    if (!stdin.hasTerminal || _draftWindowOpen) return;
+    TerminalManager.instance.clearEndWindowSentinels();
+    _draftWindowOpen = true;
+    _draftReaderExited = Completer<void>();
+    unawaited(_readDraftWindow());
+  }
+
+  Future<void> _stopTurnInput() async {
+    if (!_draftWindowOpen) return;
+    _draftWindowOpen = false;
+    TerminalManager.instance.endWindow();
+    try {
+      await _draftReaderExited.future.timeout(
+        const Duration(milliseconds: 200),
+      );
+    } catch (_) {}
+  }
+
   Future<void> _readDraftWindow() async {
     final theme = NibTheme.current;
-    final promptString =
-        '${theme.secondary.text('…')} ${theme.accent.text('›')} ';
-    _draftReaderExited = Completer<void>();
+    final promptString = ScreenCoordinator.instance.isActive
+        ? '    ${theme.secondary.text('…')} ${theme.accent.text('›')} '
+        : '${theme.secondary.text('…')} ${theme.accent.text('›')} ';
     // Inside this window Esc / Ctrl+C is the interrupt, and nothing else.
     _promptReader.onInterrupt = (keyName) => _interruptTurn(keyName);
-    while (_draftWindowOpen && _isExecutingTurn && !_turnInterrupted) {
-      final result = await _promptReader.readSubmit(
-        prompt: promptString,
-        initial: TerminalManager.instance.draft,
-        window: true,
-        // Silent until the human types: the window opens on every tool call, and a
-        // prompt row that flashes and vanishes is a row Nib wrote for nothing.
-        silent: true,
-        hasQueued: _promptReader.hasQueued,
-      );
-      if (result == null) break;
-      // Alt+Enter is the queue gesture Nick already uses in Tau: hold this, send
-      // it when you are done.
-      if (result.kind == SubmitKind.queue) {
-        // Alt+Enter: this draft is complete and waits for the turn to end. It must
-        // land in the queue slot, not be discarded on the way out.
-        _promptReader.enqueue(result.text);
+    try {
+      while (_draftWindowOpen && _isExecutingTurn && !_turnInterrupted) {
+        final hasDraft = TerminalManager.instance.draft.isNotEmpty;
+        final result = await _promptReader.readSubmit(
+          prompt: promptString,
+          initial: TerminalManager.instance.draft,
+          window: true,
+          silent: !hasDraft,
+          onStartTyping: () => _ambient.yieldRowToHuman(),
+          hasQueued: _promptReader.hasQueued,
+        );
+        if (result == null || result.kind == SubmitKind.windowEnded) break;
+        // Alt+Enter or Enter queues the draft mid-turn.
+        if (result.kind == SubmitKind.queue ||
+            result.kind == SubmitKind.submit) {
+          if (result.text.trim().isNotEmpty) {
+            _promptReader.enqueue(result.text);
+            if (ScreenCoordinator.instance.isActive) {
+              ScreenCoordinator.instance.setQueued(
+                _promptReader.queuedMessages,
+              );
+            } else {
+              _writeLine(
+                '  ${theme.info.text('⏎ Queued:')} ${theme.muted.text(result.text.trim())}',
+              );
+            }
+            _ambient.showComposition(queued: _promptReader.queued);
+            _ambient.resumeRowFromHuman();
+          }
+          continue;
+        }
         break;
       }
-      if (result.kind != SubmitKind.submit || result.text.trim().isEmpty) {
-        break;
-      }
-      _promptReader.enqueue(result.text);
+    } finally {
+      _draftWindowOpen = false;
+      _promptReader.onInterrupt = null;
+      if (!_draftReaderExited.isCompleted) _draftReaderExited.complete();
     }
-    _draftWindowOpen = false;
-    _promptReader.onInterrupt = null;
-    if (!_draftReaderExited.isCompleted) _draftReaderExited.complete();
   }
 
   String _formatToolArgsSummary(String toolName, Map<String, dynamic> args) {
@@ -607,12 +742,18 @@ class CliUi {
       return [];
     }
 
+    final width = _cardWidth();
+    final innerWidth = max(20, width - 8);
+
     // For edit_file, print the diff nicely with preserved color
     if (toolName == 'edit_file') {
       const maxDiffLines = 14;
       final shown = lines.take(maxDiffLines).toList();
       final res = <String>[];
-      res.addAll(shown);
+      for (final line in shown) {
+        final wrapped = _wrapText(line, innerWidth);
+        res.addAll(wrapped);
+      }
       if (lines.length > maxDiffLines) {
         res.add(
           NibTheme.current.muted.text(
@@ -628,10 +769,10 @@ class CliUi {
     final shown = lines.take(maxPreviewLines).toList();
     final res = <String>[];
     for (final line in shown) {
-      final truncated = line.length > 100
-          ? '${line.substring(0, 97)}...'
-          : line;
-      res.add(NibTheme.current.muted.text(truncated));
+      final wrapped = _wrapText(line, innerWidth);
+      for (final w in wrapped) {
+        res.add(NibTheme.current.muted.text(w));
+      }
     }
 
     if (lines.length > maxPreviewLines) {
@@ -645,15 +786,12 @@ class CliUi {
     return res;
   }
 
-  /// Width of the tool card's filler rule, following the terminal instead of a
-  // hardcoded constant, and capped with the transcript (#24).
-  int _ruleFill(int used) {
+  int _cardWidth() {
     var cols = 80;
     try {
       if (stdout.hasTerminal) cols = stdout.terminalColumns;
     } catch (_) {}
     if (cols > 100) cols = 100;
-    final fill = cols - used - 4;
-    return fill < 2 ? 2 : fill;
+    return cols;
   }
 }

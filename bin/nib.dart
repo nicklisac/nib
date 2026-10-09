@@ -289,9 +289,7 @@ void main(List<String> arguments) async {
           workspace: workspace,
         ),
       );
-      stdout.writeln(
-        '${NibTheme.current.accent.text('nib')} ${NibTheme.current.secondary.text('❯')} $prompt',
-      );
+      ui.renderUserTurn(prompt);
       await ui.runWithPrompt(prompt);
       TerminalManager.instance.dispose();
       exit(0);
