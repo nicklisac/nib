@@ -52,17 +52,15 @@ class AmbientLine {
   /// a row that wraps.
   static const int _indent = 2;
 
+  /// Compact arrow flight sequence into the inner ring target:
+  /// Launch up, glide across, strike, and hold embedded for impact.
   static const List<String> _frames = [
-    '⠋',
-    '⠙',
-    '⠹',
-    '⠸',
-    '⠼',
-    '⠴',
-    '⠦',
-    '⠧',
-    '⠇',
-    '⠏',
+    '➹   ⊚',
+    ' ➸  ⊚',
+    '  ➸ ⊚',
+    '   ➸⊚',
+    '   ➸⊚',
+    '   ➸⊚',
   ];
 
   final Agent agent;

@@ -741,8 +741,8 @@ class CliUi {
   Future<void> _readDraftWindow() async {
     final theme = NibTheme.current;
     final promptString = ScreenCoordinator.instance.isActive
-        ? '    ${theme.secondary.text('…')} ${theme.accent.text('›')} '
-        : '${theme.secondary.text('…')} ${theme.accent.text('›')} ';
+        ? '    ${theme.secondary.text('⌛︎')} ${theme.accent.text('›')} '
+        : '${theme.secondary.text('⌛︎')} ${theme.accent.text('›')} ';
     // Inside this window Esc / Ctrl+C is the interrupt, and nothing else.
     _promptReader.onInterrupt = (keyName) => _interruptTurn(keyName);
     try {
