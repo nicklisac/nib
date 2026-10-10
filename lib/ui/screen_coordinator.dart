@@ -133,13 +133,27 @@ class ScreenCoordinator {
   /// Writes rows `1 .. headerLines` and erases any row between them and
   /// [replacing], so a header that collapsed from two rows to one leaves no
   /// orphaned text on row 2.
+  ///
+  /// The band inverts the theme rather than the terminal: the theme's text
+  /// color becomes the row's background and its surface color the letters, so
+  /// the header reads as the negative of the transcript underneath it in
+  /// palette colors. ANSI reverse video would swap only the terminal's own
+  /// defaults and render theme-blind black-on-white.
+  ///
+  /// The background is set before each erase so background-color erase fills
+  /// the whole row with it, and rows being given up are erased with no
+  /// attribute at all, returning them to the transcript's own colors.
   void _paintHeader({required int replacing}) {
+    final theme = NibTheme.current;
     _out('\x1B7');
     for (var r = 1; r <= headerLines; r++) {
-      _out('\x1B[$r;1H\x1B[2K${_headerLines[r - 1]}');
+      _out(
+        '\x1B[$r;1H${theme.primary.bg}\x1B[2K'
+        '${theme.surface.fg}${_headerLines[r - 1]}\x1B[0m',
+      );
     }
     for (var r = headerLines + 1; r <= replacing; r++) {
-      _out('\x1B[$r;1H\x1B[2K');
+      _out('\x1B[$r;1H\x1B[0m\x1B[2K');
     }
     _out('\x1B8');
   }

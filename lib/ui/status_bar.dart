@@ -40,14 +40,17 @@ class StatusBar {
   /// life of the session and because rule 5 wants it visible before compaction
   /// fires. With a header pinned the dock never prints, so the header is the only
   /// place that reading can live.
+  ///
+  /// Deliberately unstyled: the header band paints with reverse video, and any
+  /// themed text here would end its segment with a reset that drops the band
+  /// mid-row. The inversion is the styling.
   static List<String> headerSegments(Agent agent) {
-    final theme = NibTheme.current;
     return [
-      '${theme.accent.text('✒')} ${theme.primary.text('Nib')}',
-      theme.accent.text(agent.provider.name),
-      theme.secondary.text(agent.provider.model),
-      theme.muted.text('⌂ ${p.basename(Directory.current.path)}'),
-      theme.muted.text(agent.meter.thresholdLabel),
+      '✒  Nib',
+      agent.provider.name,
+      agent.provider.model,
+      '⌂ ${p.basename(Directory.current.path)}',
+      agent.meter.thresholdLabel,
     ];
   }
 

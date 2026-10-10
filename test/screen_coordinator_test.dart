@@ -1,4 +1,5 @@
 import 'package:nib/ui/screen_coordinator.dart';
+import 'package:nib/ui/theme.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -200,13 +201,14 @@ void main() {
 
         // Region starts below the header, not at row 1
         expect(writes, contains('\x1B7\x1B[2;26r\x1B8'));
-        // Header painted on row 1 only
+        // Header painted on row 1 only, with the theme inverted (text color
+        // as background) so the band reads as chrome, not chat history.
         expect(writes.any((w) => w.contains('\x1B[2;1H\x1B[2KNib')), isFalse);
+        final band = NibTheme.current.primary.bg;
         expect(
-          writes
-              .firstWhere((w) => w.contains('\x1B[1;1H\x1B[2KNib'))
-              .isNotEmpty,
+          writes.any((w) => w.contains('\x1B[1;1H$band\x1B[2K')),
           isTrue,
+          reason: 'row 1 must be painted with the theme background active',
         );
       },
     );
@@ -224,7 +226,9 @@ void main() {
       // Nothing written between cursor-save and cursor-restore may contain a
       // newline: row 1 is outside the scroll region, so a newline there scrolls
       // the header off screen.
-      final paints = writes.where((w) => w.contains(';1H\x1B[2K'));
+      final paints = writes.where(
+        (w) => w.contains(';1H') && w.contains('\x1B[2K'),
+      );
       expect(paints, isNotEmpty);
       for (final p in paints) {
         expect(p.contains('\n'), isFalse);
@@ -304,7 +308,9 @@ void main() {
         coord.setHeader(['Nib', 'exllama'], width: 80);
 
         expect(coord.headerLines, equals(1));
-        expect(writes, contains('\x1B[2;1H\x1B[2K'));
+        // The released row is erased with attributes reset, so no reverse
+        // video survives on a row the transcript now owns.
+        expect(writes, contains('\x1B[2;1H\x1B[0m\x1B[2K'));
         expect(coord.scrollTop, equals(2));
       },
     );
