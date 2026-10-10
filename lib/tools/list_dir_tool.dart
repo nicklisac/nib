@@ -85,12 +85,12 @@ class ListDirTool extends AgentTool {
         if (rel.startsWith('.git/') || rel == '.git') continue;
 
         if (entity is Directory) {
-          buffer.writeln('  📁 $rel/');
+          buffer.writeln('  ▸ $rel/');
         } else if (entity is File) {
           final size = entity.lengthSync();
-          buffer.writeln('  📄 $rel  (${_formatBytes(size)})');
+          buffer.writeln('  · $rel  (${_formatBytes(size)})');
         } else if (entity is Link) {
-          buffer.writeln('  🔗 $rel -> (symlink)');
+          buffer.writeln('  ↪ $rel -> (symlink)');
         }
       }
 

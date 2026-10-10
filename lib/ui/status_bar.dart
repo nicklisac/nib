@@ -43,8 +43,8 @@ class StatusBar {
     final pBadge = '${theme.surface.bg}${theme.accent.fg} $provName \x1B[0m';
     final mBadge = '${theme.surface.bg}${theme.primary.fg} $shortModel \x1B[0m';
     final thinkBadge =
-        '${theme.surface.bg}${theme.secondary.fg} 🧠 ${agent.thinkingLevel.label} \x1B[0m';
-    final dirBadge = theme.muted.text('📂 $cwd');
+        '${theme.surface.bg}${theme.secondary.fg} § ${agent.thinkingLevel.label} \x1B[0m';
+    final dirBadge = theme.muted.text('⌂ $cwd');
     final undoBadge = undoCount > 0
         ? ' ${theme.warning.text('⤺ undo: $undoCount')}'
         : '';
