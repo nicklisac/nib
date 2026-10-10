@@ -259,6 +259,8 @@ class ScreenCoordinator {
         _transcriptCol++;
         if (_transcriptCol > terminalColumns) {
           flushBuffer();
+          _out('\n');
+          _out('\r');
           _transcriptRow = min(_transcriptRow + 1, scrollBottom);
           _transcriptCol = 1;
         }

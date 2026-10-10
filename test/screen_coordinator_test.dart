@@ -148,5 +148,33 @@ void main() {
         expect(writes, contains('\x1B[1;36r'));
       },
     );
+
+    test(
+      'writeTranscript emits newline and carriage return when wrapping past terminalColumns',
+      () {
+        final writes = <String>[];
+        final coord = ScreenCoordinator.forTesting(out: writes.add);
+        coord.setTestDimensions(lines: 30, cols: 20);
+        coord.activate(initialPromptLines: 1);
+
+        writes.clear();
+        // Send 25 characters without newline across a 20-col terminal
+        coord.writeTranscript('1234567890123456789012345');
+
+        expect(writes, contains('\n'));
+        expect(writes, contains('\r'));
+        expect(coord.transcriptRow, equals(26));
+        // 20 chars on line 1, then wraps: 5 remaining chars on line 2 (cols 1..5), next is col 6
+        expect(coord.transcriptCol, equals(6));
+
+        // When another write arrives, it should position at row 26, col 6, not col 1
+        writes.clear();
+        coord.writeTranscript('ABC');
+        expect(writes.first, equals('\x1B7'));
+        expect(writes, contains('\x1B[26;6H'));
+        expect(writes, contains('ABC'));
+        expect(coord.transcriptCol, equals(9));
+      },
+    );
   });
 }
