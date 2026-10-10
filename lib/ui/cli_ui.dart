@@ -541,7 +541,7 @@ class CliUi {
       onThoughtDelta: (thought) {
         _ambient.recordToken();
         if (!_inThoughtBlock) {
-          _writeStreamText('  ${theme.muted.text('💭 ')}');
+          _writeStreamText('  ${theme.muted.text('§ ')}');
           _inThoughtBlock = true;
         }
         _writeStreamText(theme.muted.text(thought));
