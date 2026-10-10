@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:dart_console/dart_console.dart';
 import 'theme.dart';
+import 'transcript_writer.dart';
 
 /// Coordinates terminal geometry and hardware scrolling margins (DECSTBM).
 ///
@@ -15,8 +16,9 @@ import 'theme.dart';
 ///
 /// Output written through [writeTranscript] scrolls natively within the middle
 /// region, never overwriting or colliding with the header, the input prompt, or
-/// the status row.
-class ScreenCoordinator {
+/// the status row. It is also the [TranscriptWriter] slash commands and the
+/// session picker write through while this coordinator owns the screen.
+class ScreenCoordinator implements TranscriptWriter {
   static ScreenCoordinator? _testInstance;
   static final ScreenCoordinator _singleton = ScreenCoordinator._();
   static ScreenCoordinator get instance => _testInstance ?? _singleton;
@@ -473,6 +475,30 @@ class ScreenCoordinator {
     // Restore human cursor position
     _out('\x1B8');
   }
+
+  /// Gives back the last [rows] rows of transcript output without writing, so a
+  /// caller that appended a fixed-height block can rewrite them in place.
+  ///
+  /// The cursor can never rise above [scrollTop]: a block taller than the
+  /// region scrolled while being written, and the row tracking already
+  /// clamped to [scrollBottom], so the rows to rewind are always the last
+  /// [rows] rows of the region. The rewound rows are erased down to
+  /// [scrollBottom] — never with `ESC[J`, which would clear into the pinned
+  /// footer, rows this coordinator owns and a caller does not.
+  @override
+  void rewind(int rows) {
+    if (!_active || !isSupported) return;
+    _transcriptRow = max(scrollTop, _transcriptRow - rows);
+    _transcriptCol = 1;
+    _out('\x1B7');
+    for (var r = _transcriptRow; r <= scrollBottom; r++) {
+      _out('\x1B[$r;1H\x1B[2K');
+    }
+    _out('\x1B8');
+  }
+
+  @override
+  void writeLine(String line) => writeTranscript('$line\n');
 
   /// Clears the prompt area in the pinned footer.
   void clearPromptArea() {

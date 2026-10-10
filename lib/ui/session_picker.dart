@@ -3,18 +3,21 @@ import 'package:dart_console/dart_console.dart';
 import '../agent/session.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
+import 'transcript_writer.dart';
 
-/// Interactive arrow-key navigation session picker for resuming saved conversations.
+/// Interactive arrow-key navigation session menu for resuming saved conversations.
 class SessionPicker {
   /// Prompts the user to pick a saved conversation session using an interactive menu.
   static Future<String?> pickSession({
     AgentSession? currentSession,
     int limit = 10,
+    TranscriptWriter? writer,
   }) async {
+    final out = resolveTranscriptWriter(writer);
     final sessions = await AgentSession.listSavedSessions();
     if (sessions.isEmpty) {
       final theme = NibTheme.current;
-      stdout.writeln(
+      out.writeLine(
         theme.warning.text('  No saved sessions found in ~/.nib/sessions.'),
       );
       return null;
@@ -30,7 +33,7 @@ class SessionPicker {
     final theme = NibTheme.current;
 
     // Initial render
-    _renderMenu(items, selectedIndex, currentSession?.id, theme);
+    _renderMenu(items, selectedIndex, currentSession?.id, theme, out);
 
     while (true) {
       final key = await TerminalManager.instance.nextKey();
@@ -39,24 +42,24 @@ class SessionPicker {
         switch (key.controlChar) {
           case ControlCharacter.arrowUp:
             selectedIndex = (selectedIndex - 1 + items.length) % items.length;
-            _clearMenu(items.length);
-            _renderMenu(items, selectedIndex, currentSession?.id, theme);
+            _clearMenu(items.length, out);
+            _renderMenu(items, selectedIndex, currentSession?.id, theme, out);
             break;
 
           case ControlCharacter.arrowDown:
             selectedIndex = (selectedIndex + 1) % items.length;
-            _clearMenu(items.length);
-            _renderMenu(items, selectedIndex, currentSession?.id, theme);
+            _clearMenu(items.length, out);
+            _renderMenu(items, selectedIndex, currentSession?.id, theme, out);
             break;
 
           case ControlCharacter.enter:
-            _clearMenu(items.length);
+            _clearMenu(items.length, out);
             final chosen = items[selectedIndex]['id'] as String;
             return chosen;
 
           case ControlCharacter.ctrlC:
-            _clearMenu(items.length);
-            stdout.writeln(theme.muted.text('  Cancelled session selection.'));
+            _clearMenu(items.length, out);
+            out.writeLine(theme.muted.text('  Cancelled session selection.'));
             return null;
 
           default:
@@ -65,15 +68,15 @@ class SessionPicker {
       } else {
         final char = key.char;
         if (char == 'q' || char == 'Q' || key.char == '\x1B') {
-          _clearMenu(items.length);
-          stdout.writeln(theme.muted.text('  Cancelled session selection.'));
+          _clearMenu(items.length, out);
+          out.writeLine(theme.muted.text('  Cancelled session selection.'));
           return null;
         }
 
         // Direct number selection (1-9)
         final numVal = int.tryParse(char);
         if (numVal != null && numVal >= 1 && numVal <= items.length) {
-          _clearMenu(items.length);
+          _clearMenu(items.length, out);
           final chosen = items[numVal - 1]['id'] as String;
           return chosen;
         }
@@ -86,9 +89,10 @@ class SessionPicker {
     int selected,
     String? currentId,
     NibTheme theme,
+    TranscriptWriter out,
   ) {
-    stdout.writeln();
-    stdout.writeln(
+    out.writeLine('');
+    out.writeLine(
       '  ${theme.muted.text('╭──')} ${theme.accent.text('Select Session to Resume')} ${theme.muted.text('─' * 10)}',
     );
 
@@ -113,27 +117,26 @@ class SessionPicker {
           : previewStr;
 
       if (isSelected) {
-        stdout.writeln(
+        out.writeLine(
           '    $pointer $indexStr ${theme.accent.text(dateStr)} $turnsStr ${theme.surface.bg}${theme.accent.text(" $truncatedPreview ")}\x1B[0m$currentTag',
         );
       } else {
-        stdout.writeln(
+        out.writeLine(
           '    $pointer $indexStr ${theme.muted.text(dateStr)} $turnsStr ${theme.primary.text(truncatedPreview)}$currentTag',
         );
       }
     }
 
-    stdout.writeln('  ${theme.muted.text('╰──${'─' * 35}')}');
-    stdout.writeln(
+    out.writeLine('  ${theme.muted.text('╰──${'─' * 35}')}');
+    out.writeLine(
       '  ${theme.muted.text('Use ↑/↓ arrows to navigate, Enter to load, 1-${items.length} to select, Esc/q to cancel')}',
     );
   }
 
-  static void _clearMenu(int itemCount) {
+  static void _clearMenu(int itemCount, TranscriptWriter out) {
     // Menu takes: 1 top blank + 1 top border + itemCount rows + 1 bottom border + 1 hint line = itemCount + 4 lines
     final totalLines = itemCount + 4;
-    stdout.write('\x1B[${totalLines}A');
-    stdout.write('\r\x1B[J');
+    out.rewind(totalLines);
   }
 
   static String _formatDate(DateTime dt) {

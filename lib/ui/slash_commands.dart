@@ -16,6 +16,7 @@ import 'markdown_renderer.dart';
 import 'session_picker.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
+import 'transcript_writer.dart';
 
 /// Handles slash commands within the interactive CLI loop.
 class SlashCommandHandler {
@@ -30,7 +31,18 @@ class SlashCommandHandler {
   /// Images attached via `/image` waiting to be attached to the next turn.
   final List<ImageAttachment> pendingImages = [];
 
-  SlashCommandHandler(this.agent, [this.config]);
+  /// Where command output goes. Resolved per call so a handler built before the
+  /// coordinator activates still writes to the right place, and tests that
+  /// construct one directly keep printing to stdout.
+  TranscriptWriter get _out => resolveTranscriptWriter(_writer);
+  final TranscriptWriter? _writer;
+
+  SlashCommandHandler(this.agent, [this.config, TranscriptWriter? writer])
+    : _writer = writer;
+
+  /// Writes one transcript line through the coordinator when it owns the
+  /// screen, and to stdout when it does not.
+  void _writeln([String line = '']) => _out.writeLine(line);
 
   /// Returns true if input was a slash command and handled.
   Future<bool> handle(String input) async {
@@ -63,7 +75,7 @@ class SlashCommandHandler {
       case '/clear':
         agent.session.clearHistory();
         await agent.session.saveToDisk();
-        stdout.writeln(Ansi.greenText('  ✔ Conversation history cleared.'));
+        _writeln(Ansi.greenText('  ✔ Conversation history cleared.'));
         return true;
 
       case '/undo':
@@ -121,7 +133,7 @@ class SlashCommandHandler {
 
       case '/mock':
         agent.provider = MockProvider();
-        stdout.writeln(
+        _writeln(
           Ansi.yellowText(
             '  ✔ Switched to offline MockProvider (no API key required).',
           ),
@@ -131,11 +143,11 @@ class SlashCommandHandler {
       case '/exit':
       case '/quit':
       case '/q':
-        stdout.writeln(Ansi.dimText('Goodbye!'));
+        _writeln(Ansi.dimText('Goodbye!'));
         TerminalManager.instance.shutdown(0);
 
       default:
-        stdout.writeln(
+        _writeln(
           Ansi.yellowText(
             '  Unknown command "$cmd". Type /help for available commands.',
           ),
@@ -145,65 +157,61 @@ class SlashCommandHandler {
   }
 
   void _showHelp() {
-    stdout.writeln();
-    stdout.writeln(Ansi.boldText('Available Slash Commands:'));
-    stdout.writeln(
-      '  ${Ansi.cyanText('/help')}             Show this help message',
-    );
-    stdout.writeln(
+    _writeln();
+    _writeln(Ansi.boldText('Available Slash Commands:'));
+    _writeln('  ${Ansi.cyanText('/help')}             Show this help message');
+    _writeln(
       '  ${Ansi.cyanText('/thinking [level]')} Inspect or change thinking level ladder (off..max)',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/image [path]')}     Attach image from path or clipboard into next prompt',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/undo')}             Revert the last file change made by Nib',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/compact [focus]')}  Compact older conversation entries into structured checkpoint',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/theme [name]')}     Switch TrueColor theme (catppuccin, tokyonight, nord, gruvbox)',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/confirm')}          Toggle interactive change confirmation mode',
     );
-    stdout.writeln(
-      '  ${Ansi.cyanText('/sessions')}         List saved sessions',
-    );
-    stdout.writeln(
+    _writeln('  ${Ansi.cyanText('/sessions')}         List saved sessions');
+    _writeln(
       '  ${Ansi.cyanText('/resume [id]')}      Resume a session (interactive picker if no id given)',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/skills [cmd]')}     Inspect and toggle modular agent skills (list, show, toggle, reload)',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/config')}           Display active configuration & endpoints',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/provider [name]')}  Switch between configured providers',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/model [name]')}     Display or switch the current model',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/tools')}            List all registered agent tools',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/history')}          Display conversation stats & token usage',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/system [prompt]')}  Display or update the system prompt',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/new')}              Start a brand new session with a fresh transcript',
     );
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.cyanText('/clear')}            Clear conversation history',
     );
-    stdout.writeln('  ${Ansi.cyanText('/exit')}             Exit the CLI');
-    stdout.writeln();
-    stdout.writeln(Ansi.boldText('Keys'));
+    _writeln('  ${Ansi.cyanText('/exit')}             Exit the CLI');
+    _writeln();
+    _writeln(Ansi.boldText('Keys'));
     final keys = [
       ('Esc / Ctrl+C', 'stop the turn; your draft is kept'),
       ('Shift+Tab', 'cycle thinking level ladder (off..max)'),
@@ -213,33 +221,33 @@ class SlashCommandHandler {
       ('paste', 'inserts literally; it never sends'),
     ];
     for (final key in keys) {
-      stdout.writeln(
+      _writeln(
         '  ${Ansi.cyanText(key.$1.padRight(14))} ${Ansi.grayText(key.$2)}',
       );
     }
-    stdout.writeln();
+    _writeln();
   }
 
   Future<void> _handleUndo() async {
     if (!UndoManager.instance.canUndo) {
-      stdout.writeln(Ansi.yellowText('  No file edits in history to undo.'));
+      _writeln(Ansi.yellowText('  No file edits in history to undo.'));
       return;
     }
     final result = await UndoManager.instance.undo();
     if (result != null) {
-      stdout.writeln();
-      stdout.writeln('  ${Ansi.greenText('✔ Undo successful:')}');
-      stdout.writeln('  $result');
-      stdout.writeln();
+      _writeln();
+      _writeln('  ${Ansi.greenText('✔ Undo successful:')}');
+      _writeln('  $result');
+      _writeln();
     }
   }
 
   Future<void> _showSessions() async {
     final list = await AgentSession.listSavedSessions();
-    stdout.writeln();
-    stdout.writeln(Ansi.boldText('Saved Sessions (~/.nib/sessions/):'));
+    _writeln();
+    _writeln(Ansi.boldText('Saved Sessions (~/.nib/sessions/):'));
     if (list.isEmpty) {
-      stdout.writeln('  ${Ansi.dimText('No saved sessions found yet.')}');
+      _writeln('  ${Ansi.dimText('No saved sessions found yet.')}');
     } else {
       for (final s in list) {
         final id = s['id'] as String;
@@ -247,12 +255,12 @@ class SlashCommandHandler {
         final preview = s['last_prompt'] as String;
         final isCurrent = id == agent.session.id;
         final marker = isCurrent ? Ansi.greenText(' (current)') : '';
-        stdout.writeln(
+        _writeln(
           '  • ${Ansi.cyanText(id)}$marker ${Ansi.dimText('[$turns turns]')} ${Ansi.grayText(preview)}',
         );
       }
     }
-    stdout.writeln();
+    _writeln();
   }
 
   Future<void> _handleResume(List<String> args) async {
@@ -266,12 +274,12 @@ class SlashCommandHandler {
 
     final loaded = await AgentSession.loadFromDisk(id);
     if (loaded == null) {
-      stdout.writeln(Ansi.redText('  Failed to load session "$id".'));
+      _writeln(Ansi.redText('  Failed to load session "$id".'));
       return;
     }
 
     agent.session = loaded;
-    stdout.writeln(
+    _writeln(
       NibTheme.current.success.text(
         '  ✔ Resumed session "$id" (${loaded.messages.length} messages loaded).',
       ),
@@ -294,7 +302,7 @@ class SlashCommandHandler {
     UndoManager.instance.clearHistory();
     agent.meter.reset();
 
-    stdout.writeln(
+    _writeln(
       NibTheme.current.success.text(
         '  ✔ Started new session "${newSession.id}".',
       ),
@@ -311,14 +319,14 @@ class SlashCommandHandler {
     switch (sub) {
       case 'list':
         final all = SkillsManager.instance.skills;
-        stdout.writeln();
-        stdout.writeln(
+        _writeln();
+        _writeln(
           Ansi.boldText(
             'Registered Agent Skills (${all.where((s) => s.isEnabled).length}/${all.length} active):',
           ),
         );
         if (all.isEmpty) {
-          stdout.writeln(
+          _writeln(
             '  ${theme.muted.text('No skills discovered in .nib/skills or ~/.nib/skills.')}',
           );
         } else {
@@ -329,52 +337,52 @@ class SlashCommandHandler {
             final scopeBadge = s.isWorkspace
                 ? theme.warning.text('[workspace]')
                 : theme.secondary.text('[global]   ');
-            stdout.writeln(
+            _writeln(
               '  $statusBadge $scopeBadge ${theme.accent.text(s.name.padRight(16))} ${theme.muted.text(s.description)}',
             );
           }
         }
-        stdout.writeln(
+        _writeln(
           '\n  ${theme.muted.text('Commands: /skills show <name> | /skills run <name> [instructions] | /skills enable|disable <name> | /skills reload')}',
         );
-        stdout.writeln();
+        _writeln();
         break;
 
       case 'show':
       case 'view':
         if (target.isEmpty) {
-          stdout.writeln(theme.warning.text('  Usage: /skills show <name>'));
+          _writeln(theme.warning.text('  Usage: /skills show <name>'));
           return;
         }
         final skill = SkillsManager.instance.findSkill(target);
         if (skill == null) {
-          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          _writeln(theme.warning.text('  Skill "$target" not found.'));
           return;
         }
-        stdout.writeln();
+        _writeln();
         final title = 'Skill: ${skill.name}';
         final topUsed = 9 + title.length;
         final topRule = max(2, 40 - topUsed);
-        stdout.writeln(
+        _writeln(
           '  ${theme.muted.text('╭──')} ${theme.accent.text(title)} ${theme.muted.text('─' * topRule)}',
         );
-        stdout.writeln('    Location: ${theme.muted.text(skill.filePath)}');
-        stdout.writeln(
+        _writeln('    Location: ${theme.muted.text(skill.filePath)}');
+        _writeln(
           '    Status:   ${skill.isEnabled ? theme.success.text('Active') : theme.muted.text('Disabled')}',
         );
-        stdout.writeln('  ${theme.muted.text('╰──${'─' * 35}')}');
-        stdout.writeln(MarkdownRenderer.render(skill.content, theme));
-        stdout.writeln();
+        _writeln('  ${theme.muted.text('╰──${'─' * 35}')}');
+        _writeln(MarkdownRenderer.render(skill.content, theme));
+        _writeln();
         break;
 
       case 'toggle':
         if (target.isEmpty) {
-          stdout.writeln(theme.warning.text('  Usage: /skills toggle <name>'));
+          _writeln(theme.warning.text('  Usage: /skills toggle <name>'));
           return;
         }
         final skill = SkillsManager.instance.findSkill(target);
         if (skill == null) {
-          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          _writeln(theme.warning.text('  Skill "$target" not found.'));
           return;
         }
         mutated = true;
@@ -385,19 +393,19 @@ class SlashCommandHandler {
         final stateStr = skill.isEnabled
             ? theme.success.text('ENABLED')
             : theme.muted.text('DISABLED');
-        stdout.writeln(
+        _writeln(
           '  ✔ Skill ${theme.accent.text(skill.name)} is now $stateStr.',
         );
         break;
 
       case 'enable':
         if (target.isEmpty) {
-          stdout.writeln(theme.warning.text('  Usage: /skills enable <name>'));
+          _writeln(theme.warning.text('  Usage: /skills enable <name>'));
           return;
         }
         final skill = SkillsManager.instance.findSkill(target);
         if (skill == null) {
-          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          _writeln(theme.warning.text('  Skill "$target" not found.'));
           return;
         }
         mutated = true;
@@ -405,19 +413,19 @@ class SlashCommandHandler {
         agent.session.rebuildSystemPrompt(
           appendPrompt: config?.systemPromptAppend,
         );
-        stdout.writeln(
+        _writeln(
           '  ✔ Skill ${theme.accent.text(skill.name)} ${theme.success.text('ENABLED')}.',
         );
         break;
 
       case 'disable':
         if (target.isEmpty) {
-          stdout.writeln(theme.warning.text('  Usage: /skills disable <name>'));
+          _writeln(theme.warning.text('  Usage: /skills disable <name>'));
           return;
         }
         final skill = SkillsManager.instance.findSkill(target);
         if (skill == null) {
-          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          _writeln(theme.warning.text('  Skill "$target" not found.'));
           return;
         }
         mutated = true;
@@ -425,7 +433,7 @@ class SlashCommandHandler {
         agent.session.rebuildSystemPrompt(
           appendPrompt: config?.systemPromptAppend,
         );
-        stdout.writeln(
+        _writeln(
           '  ✔ Skill ${theme.accent.text(skill.name)} ${theme.muted.text('DISABLED')}.',
         );
         break;
@@ -433,7 +441,7 @@ class SlashCommandHandler {
       case 'run':
       case 'use':
         if (target.isEmpty) {
-          stdout.writeln(
+          _writeln(
             theme.warning.text('  Usage: /skills run <name> [instructions]'),
           );
           return;
@@ -448,11 +456,11 @@ class SlashCommandHandler {
           extra = '';
         }
         if (skill == null) {
-          stdout.writeln(theme.warning.text('  Skill "$target" not found.'));
+          _writeln(theme.warning.text('  Skill "$target" not found.'));
           return;
         }
         if (!skill.isEnabled) {
-          stdout.writeln(
+          _writeln(
             theme.warning.text(
               '  Skill "${skill.name}" is disabled. Enable it first with /skills enable ${skill.name}.',
             ),
@@ -465,7 +473,7 @@ class SlashCommandHandler {
         pendingInvocation = extra.isEmpty
             ? body
             : '$body\n\n## Request\n\n$extra';
-        stdout.writeln(
+        _writeln(
           theme.success.text(
             '  ✔ Invoking skill "${skill.name}"${extra.isEmpty ? '' : ' with your instructions'}.',
           ),
@@ -473,7 +481,7 @@ class SlashCommandHandler {
         break;
 
       case 'reload':
-        stdout.writeln(
+        _writeln(
           theme.muted.text(
             '  Reloading skills from workspace and user directories...',
           ),
@@ -488,7 +496,7 @@ class SlashCommandHandler {
         );
         final count = SkillsManager.instance.skills.length;
         final activeCount = SkillsManager.instance.activeSkills.length;
-        stdout.writeln(
+        _writeln(
           theme.success.text(
             '  ✔ Loaded $count skills ($activeCount active). System prompt updated.',
           ),
@@ -507,11 +515,11 @@ class SlashCommandHandler {
           final stateStr = skill.isEnabled
               ? theme.success.text('ENABLED')
               : theme.muted.text('DISABLED');
-          stdout.writeln(
+          _writeln(
             '  ✔ Skill ${theme.accent.text(skill.name)} is now $stateStr.',
           );
         } else {
-          stdout.writeln(
+          _writeln(
             theme.warning.text(
               '  Unknown skill command "$sub". Usage: /skills [list|show|run|toggle|enable|disable|reload] [name]',
             ),
@@ -527,44 +535,38 @@ class SlashCommandHandler {
 
   void _handleThinking(List<String> args) {
     if (args.isEmpty) {
-      stdout.writeln();
-      stdout.writeln(Ansi.boldText('Thinking Level Configuration:'));
-      stdout.writeln(
-        '  Current Level: ${Ansi.cyanText(agent.thinkingLevel.label)}',
-      );
-      stdout.writeln(
+      _writeln();
+      _writeln(Ansi.boldText('Thinking Level Configuration:'));
+      _writeln('  Current Level: ${Ansi.cyanText(agent.thinkingLevel.label)}');
+      _writeln(
         '  Ladder:        ${ThinkingLevel.values.map((l) => l == agent.thinkingLevel ? Ansi.cyanText('[${l.label}]') : l.label).join(' · ')}',
       );
-      stdout.writeln(
-        '  Shortcut:      Shift+Tab cycles live during prompting.',
-      );
-      stdout.writeln();
+      _writeln('  Shortcut:      Shift+Tab cycles live during prompting.');
+      _writeln();
       return;
     }
     try {
       final level = ThinkingLevel.parse(args[0]);
       agent.thinkingLevel = level;
-      stdout.writeln(
-        Ansi.greenText('  ✔ Thinking level set to "${level.label}".'),
-      );
+      _writeln(Ansi.greenText('  ✔ Thinking level set to "${level.label}".'));
     } catch (e) {
-      stdout.writeln(Ansi.redText('  ✖ $e'));
+      _writeln(Ansi.redText('  ✖ $e'));
     }
   }
 
   Future<void> _handleImage(List<String> args) async {
     if (args.isEmpty) {
-      stdout.writeln(Ansi.grayText('  Checking clipboard for image...'));
+      _writeln(Ansi.grayText('  Checking clipboard for image...'));
       final clip = await ImageAttachment.fromClipboard();
       if (clip != null) {
         pendingImages.add(clip);
-        stdout.writeln(
+        _writeln(
           Ansi.greenText(
             '  ✔ Grabbed image from clipboard (${clip.width}x${clip.height}, ${clip.mimeType}). It will be included with your next prompt.',
           ),
         );
       } else {
-        stdout.writeln(
+        _writeln(
           Ansi.yellowText(
             '  ✖ No image found in clipboard. Use: /image <file-path> or mention @image.png (Tier 3).',
           ),
@@ -576,13 +578,13 @@ class SlashCommandHandler {
     final rawPath = args.join(' ');
     final file = File(rawPath);
     if (!await file.exists()) {
-      stdout.writeln(Ansi.redText('  ✖ File "$rawPath" does not exist.'));
+      _writeln(Ansi.redText('  ✖ File "$rawPath" does not exist.'));
       return;
     }
 
     final attachment = await ImageAttachment.fromFile(file);
     if (attachment == null) {
-      stdout.writeln(
+      _writeln(
         Ansi.redText(
           '  ✖ Could not decode "$rawPath" as a valid image (PNG, JPEG, GIF, WEBP, BMP supported).',
         ),
@@ -591,7 +593,7 @@ class SlashCommandHandler {
     }
 
     pendingImages.add(attachment);
-    stdout.writeln(
+    _writeln(
       Ansi.greenText(
         '  ✔ Attached image: $rawPath (${attachment.width}x${attachment.height}, ${attachment.mimeType}). It will be included with your next prompt.',
       ),
@@ -599,31 +601,31 @@ class SlashCommandHandler {
   }
 
   void _showConfig() {
-    stdout.writeln();
-    stdout.writeln(Ansi.boldText('Nib Configuration:'));
-    stdout.writeln('  Active Provider:  ${Ansi.cyanText(agent.provider.name)}');
-    stdout.writeln(
+    _writeln();
+    _writeln(Ansi.boldText('Nib Configuration:'));
+    _writeln('  Active Provider:  ${Ansi.cyanText(agent.provider.name)}');
+    _writeln(
       '  Active Model:     ${Ansi.brightCyanText(agent.provider.model)}',
     );
-    stdout.writeln(
+    _writeln(
       '  Thinking Level:   ${Ansi.magentaText(agent.thinkingLevel.label)}',
     );
     if (agent.provider is OpenAiProvider) {
       final oai = agent.provider as OpenAiProvider;
-      stdout.writeln('  Endpoint:         ${Ansi.grayText(oai.baseUrl)}');
+      _writeln('  Endpoint:         ${Ansi.grayText(oai.baseUrl)}');
     }
     if (config != null && config!.providers.isNotEmpty) {
-      stdout.writeln('\n${Ansi.boldText('Configured Providers:')}');
+      _writeln('\n${Ansi.boldText('Configured Providers:')}');
       for (final p in config!.providers.values) {
         final marker = p.name == agent.provider.name
             ? Ansi.greenText(' (active)')
             : '';
-        stdout.writeln(
+        _writeln(
           '  • ${Ansi.yellowText(p.name)}: model=${p.model}, endpoint=${p.baseUrl}$marker',
         );
       }
     }
-    stdout.writeln();
+    _writeln();
   }
 
   void _handleProvider(List<String> args) {
@@ -640,13 +642,13 @@ class SlashCommandHandler {
         baseUrl: p.baseUrl,
         apiKey: p.apiKey,
       );
-      stdout.writeln(
+      _writeln(
         Ansi.greenText(
           '  ✔ Switched to provider "$name" (${p.model} @ ${p.baseUrl})',
         ),
       );
     } else {
-      stdout.writeln(
+      _writeln(
         Ansi.yellowText(
           '  Provider "$name" not found in config. Available: ${config?.providers.keys.join(', ') ?? 'none'}',
         ),
@@ -659,26 +661,22 @@ class SlashCommandHandler {
     final meter = agent.meter;
     final spent =
         agent.session.totalPromptTokens + agent.session.totalCompletionTokens;
-    stdout.writeln();
-    stdout.writeln(Ansi.boldText('Session Transcript Summary:'));
-    stdout.writeln('  Session ID:         ${Ansi.cyanText(agent.session.id)}');
-    stdout.writeln('  Total messages:     ${msgs.length}');
-    stdout.writeln(
-      '  Tool executions:    ${agent.session.toolExecutionsCount}',
-    );
-    stdout.writeln('  Undo history depth: ${UndoManager.instance.count}');
-    stdout.writeln();
+    _writeln();
+    _writeln(Ansi.boldText('Session Transcript Summary:'));
+    _writeln('  Session ID:         ${Ansi.cyanText(agent.session.id)}');
+    _writeln('  Total messages:     ${msgs.length}');
+    _writeln('  Tool executions:    ${agent.session.toolExecutionsCount}');
+    _writeln('  Undo history depth: ${UndoManager.instance.count}');
+    _writeln();
 
     // Tokens spent is an after-the-fact billing figure, so it lives here rather
     // than on the ambient line's gauge (#20).
-    stdout.writeln(
+    _writeln(
       '  ${Ansi.boldText('Tokens spent:')}       ${Ansi.cyanText(_formatTokens(spent))}',
     );
-    stdout.writeln('    prompt:           ${agent.session.totalPromptTokens}');
-    stdout.writeln(
-      '    completion:        ${agent.session.totalCompletionTokens}',
-    );
-    stdout.writeln();
+    _writeln('    prompt:           ${agent.session.totalPromptTokens}');
+    _writeln('    completion:        ${agent.session.totalCompletionTokens}');
+    _writeln();
 
     // The raw window numbers the ambient line leaves out, plus the threshold that
     // will trigger compaction. Seeing how far you are from compaction is what
@@ -687,34 +685,32 @@ class SlashCommandHandler {
     final provenance = meter.isMeasured
         ? Ansi.greenText('measured (provider usage)')
         : Ansi.yellowText('estimated (chars/4)');
-    stdout.writeln(Ansi.boldText('Context gauge:'));
-    stdout.writeln(
+    _writeln(Ansi.boldText('Context gauge:'));
+    _writeln(
       '  Occupied:           ${Ansi.cyanText('${_formatTokens(occupied)} / ${_formatTokens(meter.contextWindow)}')}  ${Ansi.boldText(meter.displayFor(agent.session))}',
     );
-    stdout.writeln('  Basis:            $provenance');
-    stdout.writeln(
+    _writeln('  Basis:            $provenance');
+    _writeln(
       '  Auto-compact at:    ${Ansi.cyanText(_formatTokens(meter.threshold))} (reserve ${_formatTokens(meter.reserve)})',
     );
-    stdout.writeln();
+    _writeln();
   }
 
   static String _formatTokens(int tokens) =>
       tokens >= 1000 ? '${(tokens / 1000).toStringAsFixed(1)}k' : '$tokens';
 
   void _showTools() {
-    stdout.writeln();
-    stdout.writeln(Ansi.boldText('Registered Agent Tools:'));
+    _writeln();
+    _writeln(Ansi.boldText('Registered Agent Tools:'));
     for (final tool in agent.tools) {
-      stdout.writeln(
-        '  ${Ansi.brightCyanText(tool.name)}: ${tool.description}',
-      );
+      _writeln('  ${Ansi.brightCyanText(tool.name)}: ${tool.description}');
     }
-    stdout.writeln();
+    _writeln();
   }
 
   void _handleModel(List<String> args) {
     if (args.isEmpty) {
-      stdout.writeln(
+      _writeln(
         '  Current model: ${Ansi.cyanText(agent.provider.model)} (provider: ${agent.provider.name})',
       );
       return;
@@ -729,9 +725,9 @@ class SlashCommandHandler {
         apiKey: current.apiKey,
         baseUrl: current.baseUrl,
       );
-      stdout.writeln(Ansi.greenText('  ✔ Model changed to $newModel'));
+      _writeln(Ansi.greenText('  ✔ Model changed to $newModel'));
     } else {
-      stdout.writeln(
+      _writeln(
         Ansi.yellowText(
           '  Model switching currently supports OpenAI-compatible providers.',
         ),
@@ -741,31 +737,31 @@ class SlashCommandHandler {
 
   void _handleSystem(List<String> args) {
     if (args.isEmpty) {
-      stdout.writeln();
-      stdout.writeln(Ansi.boldText('Current System Prompt:'));
-      stdout.writeln(agent.session.systemPrompt);
-      stdout.writeln();
+      _writeln();
+      _writeln(Ansi.boldText('Current System Prompt:'));
+      _writeln(agent.session.systemPrompt);
+      _writeln();
     } else {
       final newPrompt = args.join(' ');
       agent.session.systemPrompt = newPrompt;
       agent.session.addSystemPromptIfNeeded();
-      stdout.writeln(Ansi.greenText('  ✔ System prompt updated.'));
+      _writeln(Ansi.greenText('  ✔ System prompt updated.'));
     }
   }
 
   void _handleTheme(List<String> args) {
     if (args.isEmpty) {
-      stdout.writeln();
-      stdout.writeln(Ansi.boldText('Available TrueColor Themes:'));
+      _writeln();
+      _writeln(Ansi.boldText('Available TrueColor Themes:'));
       for (final t in NibTheme.allThemes.values) {
         final isActive = t.id == NibTheme.current.id;
         final marker = isActive ? ' (active)' : '';
-        stdout.writeln(
+        _writeln(
           '  • ${t.accent.text(t.id.padRight(12))} - ${t.secondary.text(t.displayName)}$marker',
         );
       }
-      stdout.writeln('\n  Usage: /theme <name> (e.g. /theme tokyonight)');
-      stdout.writeln();
+      _writeln('\n  Usage: /theme <name> (e.g. /theme tokyonight)');
+      _writeln();
       return;
     }
 
@@ -773,11 +769,11 @@ class SlashCommandHandler {
     if (NibTheme.allThemes.containsKey(target)) {
       NibTheme.setTheme(target);
       final active = NibTheme.current;
-      stdout.writeln(
+      _writeln(
         active.success.text('  ✔ Switched theme to ${active.displayName}'),
       );
     } else {
-      stdout.writeln(
+      _writeln(
         Ansi.yellowText(
           '  Unknown theme "$target". Available: ${NibTheme.allThemes.keys.join(', ')}',
         ),
@@ -791,13 +787,13 @@ class SlashCommandHandler {
     final newState = ApprovalManager.instance.requireConfirmation;
     final theme = NibTheme.current;
     if (newState) {
-      stdout.writeln(
+      _writeln(
         theme.warning.text(
           '  ✔ Interactive confirmation ENABLED (Nib will prompt before modifying files or running destructive commands)',
         ),
       );
     } else {
-      stdout.writeln(
+      _writeln(
         theme.muted.text(
           '  ✔ Interactive confirmation DISABLED (Auto-apply mode)',
         ),
@@ -807,7 +803,7 @@ class SlashCommandHandler {
 
   Future<void> _handleCompact(List<String> args) async {
     final focus = args.isNotEmpty ? args.join(' ') : null;
-    stdout.writeln(
+    _writeln(
       NibTheme.current.muted.text(
         '  Compacting conversation context (Tau-style)...',
       ),
@@ -818,14 +814,14 @@ class SlashCommandHandler {
       customInstructions: focus,
     );
     if (result.success) {
-      stdout.writeln(
+      _writeln(
         NibTheme.current.success.text(
           '  ✔ Compacted ${result.replacedMessageCount} messages '
           '(${result.tokensBefore} → ${result.tokensAfter} tokens).',
         ),
       );
     } else {
-      stdout.writeln(
+      _writeln(
         NibTheme.current.warning.text(
           '  Not enough messages in context to compact (needs at least ${CompactionManager.defaultKeepRecentMessages + 1} messages).',
         ),

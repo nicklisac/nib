@@ -439,4 +439,75 @@ void main() {
       expect(writes.any((w) => RegExp(r'\x1B\[1;\d+H').hasMatch(w)), isFalse);
     });
   });
+
+  /// Slash commands and the session picker write through the coordinator while
+  /// it owns the screen. These guard the /history-invisible and /resume-menu-
+  /// below-the-input regressions: output must enter the scroll region at the
+  /// tracked row, and a menu's rewind must never reach into the footer.
+  group('transcript writer routing', () {
+    test('writeLine lands in the region and advances the tracked row', () {
+      final writes = <String>[];
+      final coord = ScreenCoordinator.forTesting(out: writes.add);
+      coord.setTestDimensions(lines: 30, cols: 80);
+      coord.activate(header: ['Nib', 'exllama', 'Qwen3']);
+      // activate parks the cursor at scrollBottom; a newline there scrolls the
+      // region and the tracked row clamps rather than running past the bottom.
+      final rowBefore = coord.transcriptRow;
+      expect(rowBefore, equals(coord.scrollBottom));
+
+      writes.clear();
+      coord.writeLine('Session Transcript Summary:');
+
+      expect(coord.transcriptRow, equals(coord.scrollBottom));
+      expect(
+        writes.any((w) => w.contains('Session Transcript Summary:')),
+        isTrue,
+      );
+      // Written inside the region, not at the footer where the raw cursor sits.
+      expect(writes.any((w) => w.contains('\x1B[$rowBefore;1H')), isTrue);
+    });
+
+    test(
+      'rewind returns the cursor to the block and clears only region rows',
+      () {
+        final writes = <String>[];
+        final coord = ScreenCoordinator.forTesting(out: writes.add);
+        coord.setTestDimensions(lines: 30, cols: 80);
+        coord.activate(header: ['Nib', 'exllama', 'Qwen3']);
+        for (var i = 0; i < 8; i++) {
+          coord.writeLine('menu row $i');
+        }
+        expect(coord.transcriptRow, equals(coord.scrollBottom));
+
+        writes.clear();
+        coord.rewind(8);
+
+        expect(coord.transcriptRow, equals(coord.scrollBottom - 8));
+        expect(
+          writes.any((w) => w.contains('\x1B[J')),
+          isFalse,
+          reason: 'ESC[J would clear into the pinned footer',
+        );
+        for (final w in writes.where((w) => w.contains('\x1B[2K'))) {
+          final row = RegExp(r'\x1B\[(\d+);1H').firstMatch(w)!.group(1)!;
+          final n = int.parse(row);
+          expect(n, lessThanOrEqualTo(coord.scrollBottom));
+          expect(n, greaterThanOrEqualTo(coord.scrollTop));
+        }
+      },
+    );
+
+    test('rewind clamps at the region top when the block scrolled away', () {
+      final coord = ScreenCoordinator.forTesting(out: (_) {});
+      coord.setTestDimensions(lines: 14, cols: 80);
+      coord.activate(header: ['Nib', 'exllama', 'Qwen3']);
+      for (var i = 0; i < 20; i++) {
+        coord.writeLine('menu row $i');
+      }
+
+      coord.rewind(40);
+
+      expect(coord.transcriptRow, equals(coord.scrollTop));
+    });
+  });
 }
