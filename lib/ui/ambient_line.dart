@@ -382,7 +382,7 @@ class AmbientLine {
       final provName = agent.provider.name;
       final cwd = p.basename(Directory.current.path);
       fields[AmbientField.providerModel] =
-          '${theme.accent.text(provName)} ${theme.secondary.text(shortModel)} ${theme.muted.text('📂 $cwd')}';
+          '${theme.accent.text(provName)} ${theme.secondary.text(shortModel)} ${theme.muted.text('⌂ $cwd')}';
     }
 
     if (streaming && _stopwatch.isRunning) {
@@ -415,8 +415,8 @@ class AmbientLine {
 
     final thinkLabel = agent.thinkingLevel.label;
     fields[AmbientField.thinkingLevel] = agent.thinkingLevel.isOff
-        ? theme.muted.text('🧠 off')
-        : theme.secondary.text('🧠 $thinkLabel');
+        ? theme.muted.text('§ off')
+        : theme.secondary.text('§ $thinkLabel');
 
     final spent =
         agent.session.totalPromptTokens + agent.session.totalCompletionTokens;
