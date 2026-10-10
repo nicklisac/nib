@@ -11,6 +11,13 @@ import 'theme.dart';
 /// and follows that exchange into history. Present-tense state belongs to the
 /// ambient line, not here.
 ///
+/// It is also the *fallback* for the pinned top header, printed when there is no
+/// header to pin: a non-TTY run, or a terminal too short to spare a row. That is
+/// why it is a superset of [headerSegments] — the static facts plus the live
+/// ones it can afford to show as a snapshot — so whichever of the two is on
+/// screen, no fact has been lost. [headerSegments] is the authority on which
+/// facts are static.
+///
 /// Deliberately absent: the endpoint URL, which is redundant next to provider and
 /// model and stays in `/config`, and the tokens-spent reading, which is billing
 /// rather than occupancy and lives in `/history`.
@@ -22,6 +29,28 @@ import 'theme.dart';
 /// compaction fires (doctrine rule 5) without a second row that would have to be
 /// defended against every repaint (rule 1).
 class StatusBar {
+  /// The facts that change only when you switch provider, model, folder, or
+  /// theme — the pinned top header, one list entry per fact.
+  ///
+  /// Thinking level and undo count are *not* here even though the dock used to
+  /// show them: `ctrl+t` cycles the thinking level mid-session and undo count
+  /// moves with every edit, so both are live state and belong to the bottom row.
+  ///
+  /// The compaction threshold *is* here, because it is fixed by config for the
+  /// life of the session and because rule 5 wants it visible before compaction
+  /// fires. With a header pinned the dock never prints, so the header is the only
+  /// place that reading can live.
+  static List<String> headerSegments(Agent agent) {
+    final theme = NibTheme.current;
+    return [
+      '${theme.accent.text('✒')} ${theme.primary.text('Nib')}',
+      theme.accent.text(agent.provider.name),
+      theme.secondary.text(agent.provider.model),
+      theme.muted.text('⌂ ${p.basename(Directory.current.path)}'),
+      theme.muted.text(agent.meter.thresholdLabel),
+    ];
+  }
+
   static String render(Agent agent) {
     final theme = NibTheme.current;
     final model = agent.provider.model;

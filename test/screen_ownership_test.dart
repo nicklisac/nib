@@ -8,6 +8,7 @@ import 'package:nib/ai/mock_provider.dart';
 import 'package:nib/ui/ambient_line.dart';
 import 'package:nib/ui/cli_ui.dart';
 import 'package:nib/ui/prompt_reader.dart';
+import 'package:nib/ui/status_bar.dart';
 import 'package:nib/ui/terminal_manager.dart';
 import 'package:dart_console/dart_console.dart';
 import 'package:path/path.dart' as p;
@@ -533,6 +534,58 @@ void main() {
           reason: '"$forbidden" is the dock\'s, not the ambient line\'s',
         );
       }
+    });
+  });
+
+  group('Pinned header owns the static facts (#27)', () {
+    Agent buildAgent() => Agent(
+      provider: MockProvider(),
+      session: AgentSession(id: 'header-test')
+        ..addMessage(ChatMessage.user('hello there')),
+      contextWindow: 262144,
+    );
+
+    String plain(String styled) =>
+        styled.replaceAll(RegExp(r'\x1B\[[0-9;]*[a-zA-Z]'), '');
+
+    test('the header names provider, model, and workspace', () {
+      final segments = StatusBar.headerSegments(buildAgent()).map(plain);
+      expect(segments, contains('Mock (Offline Demo)'));
+      expect(segments, contains('mock-agent-v1'));
+      expect(segments, contains('⌂ ${p.basename(Directory.current.path)}'));
+    });
+
+    test('the header carries the compaction threshold the dock used to', () {
+      // Rule 5: the threshold must be visible before compaction fires. With a
+      // header pinned the dock never prints, so the header has to hold it.
+      final segments = StatusBar.headerSegments(buildAgent()).map(plain);
+      expect(
+        segments.any((s) => s.contains('compact at')),
+        isTrue,
+        reason: 'losing the threshold with the dock breaks doctrine rule 5',
+      );
+    });
+
+    test('the header holds no live telemetry the bottom row already owns', () {
+      final segments = StatusBar.headerSegments(buildAgent()).map(plain);
+      for (final forbidden in ['tok/s', '%', '§', '⏎', 'queued']) {
+        expect(
+          segments.any((s) => s.contains(forbidden)),
+          isFalse,
+          reason: '"$forbidden" is present tense and belongs to the bottom row',
+        );
+      }
+    });
+
+    test('thinking level sits on the bottom row, where ctrl+t can show it', () {
+      final agent = buildAgent();
+      final line = AmbientLine(agent: agent, meter: agent.meter);
+      line.startTurn();
+      expect(plain(line.render(width: 100)), contains('§'));
+      expect(
+        StatusBar.headerSegments(agent).map(plain).join(' '),
+        isNot(contains('§')),
+      );
     });
   });
 

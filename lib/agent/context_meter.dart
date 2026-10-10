@@ -85,6 +85,15 @@ class ContextMeter {
   String displayWithThreshold(AgentSession session) =>
       '${displayFor(session)} · compact at ${_formatTokens(threshold)}';
 
+  /// The compaction threshold on its own, e.g. `compact at 111.6k`.
+  ///
+  /// Static for the life of a session — both the window and the reserve come from
+  /// config and only move when the model changes — so it is a header fact rather
+  /// than a live reading. It earns a pinned row because losing your place begins
+  /// with the transcript changing underneath you without warning (feel doctrine
+  /// rule 5), and that is only avoidable if the threshold was visible beforehand.
+  String get thresholdLabel => 'compact at ${_formatTokens(threshold)}';
+
   static String _formatTokens(int tokens) =>
       tokens >= 1000 ? '${(tokens / 1000).toStringAsFixed(1)}k' : '$tokens';
 

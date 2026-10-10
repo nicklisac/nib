@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:path/path.dart' as p;
 import '../agent/agent.dart';
 import '../agent/context_meter.dart';
+import '../agent/undo_manager.dart';
 import 'screen_coordinator.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
@@ -10,10 +10,14 @@ import 'theme.dart';
 /// Field priorities for the ambient line, highest first. When the row does not
 /// fit, fields are dropped whole from the tail — never truncated mid-field,
 /// which renders as `Compiling nib v0.0…` and reads as a bug.
+///
+/// Everything here is present tense. Static session facts — provider, model,
+/// workspace — live in the pinned top header instead, which is why none of them
+/// can be a casualty of the drop loop: on a narrow window the telemetry is the
+/// point of this row, and it used to lose to a model name.
 enum AmbientField {
   stateGlyph,
   runningTool,
-  providerModel,
   elapsed,
   tokenRate,
   queue,
@@ -21,6 +25,9 @@ enum AmbientField {
   thinkingLevel,
   tokensSpent,
   toolProgress,
+
+  /// How many edits can be rolled back. Only worth a field while it is nonzero.
+  undoCount,
 
   /// Which key stopped the turn. Drops first: at 40 columns the facts that matter
   /// are *interrupted* and *draft kept*, and the key name must not push the
@@ -323,9 +330,7 @@ class AmbientLine {
   void _render() {
     if (!_canWrite) return;
     if (ScreenCoordinator.instance.isActive) {
-      ScreenCoordinator.instance.renderStatus(
-        render(width: _terminalCols, includeModel: true),
-      );
+      ScreenCoordinator.instance.renderStatus(render(width: _terminalCols));
       return;
     }
     if (!mayDraw) return;
@@ -344,7 +349,7 @@ class AmbientLine {
 
   /// The row's content, computed without touching the terminal. Split out so the
   /// width behaviour is testable rather than eyeballed.
-  String render({int width = 80, bool includeModel = false}) {
+  String render({int width = 80}) {
     final theme = NibTheme.current;
     final fields = <AmbientField, String>{};
 
@@ -372,17 +377,6 @@ class AmbientLine {
       }
     } else {
       fields[AmbientField.runningTool] = theme.muted.text('idle');
-    }
-
-    if (includeModel) {
-      final model = agent.provider.model;
-      final shortModel = model.length > 22
-          ? '${model.substring(0, 19)}...'
-          : model;
-      final provName = agent.provider.name;
-      final cwd = p.basename(Directory.current.path);
-      fields[AmbientField.providerModel] =
-          '${theme.accent.text(provName)} ${theme.secondary.text(shortModel)} ${theme.muted.text('⌂ $cwd')}';
     }
 
     if (streaming && _stopwatch.isRunning) {
@@ -417,6 +411,11 @@ class AmbientLine {
     fields[AmbientField.thinkingLevel] = agent.thinkingLevel.isOff
         ? theme.muted.text('§ off')
         : theme.secondary.text('§ $thinkLabel');
+
+    final undoCount = UndoManager.instance.count;
+    if (undoCount > 0) {
+      fields[AmbientField.undoCount] = theme.warning.text('⤺ $undoCount');
+    }
 
     final spent =
         agent.session.totalPromptTokens + agent.session.totalCompletionTokens;

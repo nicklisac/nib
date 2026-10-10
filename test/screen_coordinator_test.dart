@@ -26,8 +26,9 @@ void main() {
       // Positions cursor at scrollBottom to stream up naturally
       expect(writes, contains('\x1B[26;1H'));
 
-      // Scroll region applied to lines 1..26
-      expect(writes, contains('\x1B[1;26r'));
+      // Scroll region applied to lines 1..26 (no header was supplied, so the
+      // transcript keeps row 1)
+      expect(writes, contains('\x1B7\x1B[1;26r\x1B8'));
 
       coord.deactivate();
       expect(coord.isActive, isFalse);
@@ -49,7 +50,7 @@ void main() {
         expect(coord.footerLines, equals(6));
         expect(coord.scrollBottom, equals(24));
         expect(coord.promptStartRow, equals(26));
-        expect(writes, contains('\x1B[1;24r'));
+        expect(writes, contains('\x1B7\x1B[1;24r\x1B8'));
 
         writes.clear();
         // Prompt shrinks back to 1 line
@@ -58,7 +59,7 @@ void main() {
         expect(coord.footerLines, equals(4));
         expect(coord.scrollBottom, equals(26));
         expect(coord.promptStartRow, equals(28));
-        expect(writes, contains('\x1B[1;26r'));
+        expect(writes, contains('\x1B7\x1B[1;26r\x1B8'));
         // Freed rows 26 and 27 should be cleared
         expect(writes, contains('\x1B[26;1H\x1B[2K'));
         expect(writes, contains('\x1B[27;1H\x1B[2K'));
@@ -145,7 +146,7 @@ void main() {
         coord.updateTerminalSize();
 
         expect(coord.scrollBottom, equals(36));
-        expect(writes, contains('\x1B[1;36r'));
+        expect(writes, contains('\x1B7\x1B[1;36r\x1B8'));
       },
     );
 
@@ -176,5 +177,260 @@ void main() {
         expect(coord.transcriptCol, equals(9));
       },
     );
+  });
+
+  /// #27: static session facts pinned at the top, live telemetry alone at the
+  /// bottom. The header is a band the transcript may never scroll through.
+  group('pinned top header', () {
+    final facts = ['Nib', 'exllama', 'Qwen3-Next', '⌂ dart-tui'];
+
+    test(
+      'a header that fits takes one row and pushes the scroll region down',
+      () {
+        final writes = <String>[];
+        final coord = ScreenCoordinator.forTesting(out: writes.add);
+        coord.setTestDimensions(lines: 30, cols: 80);
+
+        expect(coord.activate(header: facts), isTrue);
+
+        expect(coord.headerLines, equals(1));
+        expect(coord.scrollTop, equals(2));
+        expect(coord.scrollBottom, equals(26));
+        expect(coord.transcriptRow, equals(26));
+
+        // Region starts below the header, not at row 1
+        expect(writes, contains('\x1B7\x1B[2;26r\x1B8'));
+        // Header painted on row 1 only
+        expect(writes.any((w) => w.contains('\x1B[2;1H\x1B[2KNib')), isFalse);
+        expect(
+          writes
+              .firstWhere((w) => w.contains('\x1B[1;1H\x1B[2KNib'))
+              .isNotEmpty,
+          isTrue,
+        );
+      },
+    );
+
+    test('the header never emits a newline, so it cannot scroll itself away', () {
+      final writes = <String>[];
+      final coord = ScreenCoordinator.forTesting(out: writes.add);
+      coord.setTestDimensions(lines: 30, cols: 80);
+      coord.activate(header: facts);
+
+      writes.clear();
+      coord.setHeader([...facts, 'extra fact'], width: 80);
+      coord.renderHeader();
+
+      // Nothing written between cursor-save and cursor-restore may contain a
+      // newline: row 1 is outside the scroll region, so a newline there scrolls
+      // the header off screen.
+      final paints = writes.where((w) => w.contains(';1H\x1B[2K'));
+      expect(paints, isNotEmpty);
+      for (final p in paints) {
+        expect(p.contains('\n'), isFalse);
+      }
+    });
+
+    test(
+      'a header too wide for one row takes two rather than dropping a fact',
+      () {
+        final coord = ScreenCoordinator.forTesting(out: (_) {});
+        coord.setTestDimensions(lines: 30, cols: 40);
+        coord.activate(header: facts);
+
+        // Joined at 40 cols this run does not fit one row.
+        coord.setHeader([
+          'Nib',
+          'anthropic',
+          'claude-3-7-sonnet-20250219',
+          '⌂ dart-tui',
+        ], width: 40);
+
+        expect(coord.headerLines, equals(2));
+        expect(coord.scrollTop, equals(3));
+        // Every fact survives the split somewhere across the two rows.
+        final joined = coord.headerContent.join(' ');
+        for (final fact in [
+          'Nib',
+          'anthropic',
+          'claude-3-7-sonnet-20250219',
+          '⌂ dart-tui',
+        ]) {
+          expect(joined, contains(fact));
+        }
+      },
+    );
+
+    test(
+      'a terminal too short to spare a row gets no header and reports it',
+      () {
+        final coord = ScreenCoordinator.forTesting(out: (_) {});
+        coord.setTestDimensions(lines: 10, cols: 80);
+
+        // footer(4) + minimum transcript(6) already fills a 10-row terminal.
+        expect(coord.activate(header: facts), isFalse);
+        expect(coord.headerLines, equals(0));
+        expect(coord.scrollTop, equals(1));
+        // The transcript keeps every row the footer does not need.
+        expect(coord.scrollBottom, equals(6));
+      },
+    );
+
+    test('header yields its rows before the footer gives up any', () {
+      final coord = ScreenCoordinator.forTesting(out: (_) {});
+      coord.setTestDimensions(lines: 12, cols: 80);
+      coord.activate(header: facts);
+
+      // 12 rows: footer 4, minimum transcript 6, so exactly 2 rows are spare and
+      // the header keeps one of them.
+      expect(coord.headerLines, equals(1));
+      expect(coord.scrollTop, equals(2));
+      expect(coord.scrollBottom, equals(8));
+      expect(coord.scrollBottom - coord.scrollTop + 1, greaterThanOrEqualTo(6));
+    });
+
+    test(
+      'a header collapsing from two rows to one clears the orphaned row',
+      () {
+        final writes = <String>[];
+        final coord = ScreenCoordinator.forTesting(out: writes.add);
+        coord.setTestDimensions(lines: 30, cols: 30);
+        coord.activate(
+          header: ['Nib', 'anthropic', 'a-long-model-name', '⌂ dart-tui'],
+        );
+        expect(coord.headerLines, equals(2));
+
+        writes.clear();
+        coord.setHeader(['Nib', 'exllama'], width: 80);
+
+        expect(coord.headerLines, equals(1));
+        expect(writes, contains('\x1B[2;1H\x1B[2K'));
+        expect(coord.scrollTop, equals(2));
+      },
+    );
+
+    test(
+      'a resize re-fits the header and re-sets the region when rows change',
+      () {
+        final writes = <String>[];
+        final coord = ScreenCoordinator.forTesting(out: writes.add);
+        coord.setTestDimensions(lines: 30, cols: 30);
+        coord.activate(
+          header: ['Nib', 'anthropic', 'a-long-model-name', '⌂ dart-tui'],
+        );
+        expect(coord.headerLines, equals(2));
+        expect(writes, contains('\x1B7\x1B[3;26r\x1B8'));
+
+        writes.clear();
+        coord.setTestDimensions(lines: 30, cols: 120);
+        coord.updateTerminalSize();
+
+        expect(coord.headerLines, equals(1));
+        expect(coord.scrollTop, equals(2));
+        expect(writes, contains('\x1B7\x1B[2;26r\x1B8'));
+      },
+    );
+
+    test(
+      'a prompt growing to multi-line pushes the header out, not the transcript',
+      () {
+        final coord = ScreenCoordinator.forTesting(out: (_) {});
+        coord.setTestDimensions(lines: 12, cols: 80);
+        coord.activate(header: ['Nib', 'exllama', 'Qwen3', '⌂ dart-tui']);
+        expect(coord.headerLines, equals(1));
+        final rowsBefore = coord.scrollBottom - coord.scrollTop + 1;
+
+        coord.updatePromptLines(3);
+
+        final rowsAfter = coord.scrollBottom - coord.scrollTop + 1;
+        // The header surrenders its row so the transcript keeps its floor.
+        expect(coord.headerLines, equals(0));
+        expect(
+          rowsAfter,
+          greaterThanOrEqualTo(rowsBefore - 2),
+          reason: 'transcript must not lose more rows than the prompt grew by',
+        );
+        expect(
+          rowsAfter,
+          greaterThanOrEqualTo(6),
+          reason: 'the transcript floor holds while the prompt grows',
+        );
+      },
+    );
+
+    test('the header comes back when the prompt shrinks again', () {
+      final coord = ScreenCoordinator.forTesting(out: (_) {});
+      coord.setTestDimensions(lines: 12, cols: 80);
+      coord.activate(header: ['Nib', 'exllama', 'Qwen3', '⌂ dart-tui']);
+      coord.updatePromptLines(3);
+      expect(coord.headerLines, equals(0));
+
+      coord.updatePromptLines(1);
+      expect(coord.headerLines, equals(1));
+    });
+
+    test('transcript stays a valid DECSTBM region at every terminal size', () {
+      // DECSTBM requires top < bottom; a violated region is silently ignored by
+      // the terminal, which shows up as output overwriting the footer. Swept
+      // across sizes and prompt/queue growth rather than spot-checked.
+      for (var lines = 10; lines <= 60; lines++) {
+        for (var cols = 40; cols <= 160; cols += 10) {
+          for (final header in [
+            const <String>[],
+            [
+              'Nib',
+              'exllama',
+              'Qwen3-Next-Heavy',
+              '⌂ dart-tui',
+              'compact at 111.6k',
+            ],
+          ]) {
+            final coord = ScreenCoordinator.forTesting(out: (_) {});
+            coord.setTestDimensions(lines: lines, cols: cols);
+            coord.activate(header: header);
+            for (final prompt in [1, 2, 4, 8]) {
+              coord.updatePromptLines(prompt);
+              for (final queue in [0, 1, 3, 6]) {
+                coord.setQueued(List.generate(queue, (i) => 'queued $i'));
+                expect(
+                  coord.scrollTop,
+                  lessThan(coord.scrollBottom),
+                  reason:
+                      'lines=$lines cols=$cols header=${header.length} '
+                      'prompt=$prompt queue=$queue',
+                );
+              }
+            }
+          }
+        }
+      }
+    });
+
+    test('deactivate clears header rows and restores full margins', () {
+      final writes = <String>[];
+      final coord = ScreenCoordinator.forTesting(out: writes.add);
+      coord.setTestDimensions(lines: 30, cols: 80);
+      coord.activate(header: facts);
+
+      writes.clear();
+      coord.deactivate();
+
+      expect(writes, contains('\x1B[1;1H\x1B[2K'));
+      expect(writes, contains('\x1B[r'));
+    });
+
+    test('transcript output is clamped inside the region below the header', () {
+      final writes = <String>[];
+      final coord = ScreenCoordinator.forTesting(out: writes.add);
+      coord.setTestDimensions(lines: 30, cols: 80);
+      coord.activate(header: facts);
+
+      writes.clear();
+      coord.writeTranscript('hello\n');
+
+      expect(writes, contains('\x1B[26;1H'));
+      // Never positioned on the header row
+      expect(writes.any((w) => RegExp(r'\x1B\[1;\d+H').hasMatch(w)), isFalse);
+    });
   });
 }

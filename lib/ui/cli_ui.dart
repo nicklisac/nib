@@ -55,6 +55,11 @@ class CliUi {
 
   final void Function(String text)? _outSink;
 
+  /// Whether static session facts are pinned in the top header. When they are not
+  /// — a non-TTY run, or a terminal too short to spare the row — the dock prints
+  /// with the prompt instead, so those facts are on screen either way.
+  bool _headerPinned = false;
+
   CliUi(this.agent, [this.config, void Function(String text)? out])
     : _outSink = out,
       _slashHandler = SlashCommandHandler(agent, config) {
@@ -112,13 +117,16 @@ class CliUi {
     StreamSubscription<ProcessSignal>? sigwinchSub;
     Timer? resizeDebounce;
     if (ScreenCoordinator.instance.isSupported) {
-      ScreenCoordinator.instance.activate();
+      _headerPinned = ScreenCoordinator.instance.activate(
+        header: StatusBar.headerSegments(agent),
+      );
       try {
         if (!Platform.isWindows) {
           sigwinchSub = ProcessSignal.sigwinch.watch().listen((_) {
             resizeDebounce?.cancel();
             resizeDebounce = Timer(const Duration(milliseconds: 50), () {
               ScreenCoordinator.instance.updateTerminalSize();
+              _headerPinned = ScreenCoordinator.instance.headerLines > 0;
               _ambient.renderDirect();
               _promptReader.repaintCurrentLine();
             });
@@ -142,9 +150,9 @@ class CliUi {
       while (true) {
         final theme = NibTheme.current;
 
-        // The dock is printed once with the prompt only if ScreenCoordinator is inactive.
-        // When active, provider, model, and folder are pinned in the bottom static bar.
-        if (!ScreenCoordinator.instance.isActive) {
+        // Static session facts live in the pinned top header. The dock prints in its
+        // place when there is no header, so the facts are never simply missing.
+        if (!_headerPinned) {
           _writeLine(StatusBar.render(agent));
         }
 
@@ -190,6 +198,10 @@ class CliUi {
 
         // Check slash commands (/help, /clear, /undo, /theme, etc.)
         if (await _slashHandler.handle(trimmed)) {
+          // /provider, /model, /mock and /theme change what the header says.
+          // Repainting after every command is cheaper than tracking which four
+          // of them matter, and a repaint only touches rows the header owns.
+          _refreshHeader();
           // A skill the human invoked runs as a normal turn, with the skill body
           // already loaded into the prompt.
           final invocation = _slashHandler.pendingInvocation;
@@ -277,6 +289,20 @@ class CliUi {
     } catch (_) {
       // Piped test environments may not support SIGINT signal watching
     }
+  }
+
+  /// Re-lays-out and repaints the pinned header from current provider state.
+  ///
+  /// Header rows are outside the DECSTBM region, so this cannot scroll the
+  /// transcript; if the facts no longer fit the same number of rows the scroll
+  /// region is re-set, which is the only geometry change it can make.
+  void _refreshHeader() {
+    if (!ScreenCoordinator.instance.isActive) return;
+    ScreenCoordinator.instance.setHeader(
+      StatusBar.headerSegments(agent),
+      width: ScreenCoordinator.instance.terminalColumns,
+    );
+    _headerPinned = ScreenCoordinator.instance.headerLines > 0;
   }
 
   /// Reads one prompt at the human-owned window, restoring any draft the last
@@ -378,7 +404,7 @@ class CliUi {
     }
     _promptReader.addToHistory(queued);
     ScreenCoordinator.instance.setQueued(_promptReader.queuedMessages);
-    if (showDock && !ScreenCoordinator.instance.isActive) {
+    if (showDock && !_headerPinned) {
       _writeLine(StatusBar.render(agent));
     }
     renderUserTurn(queued.trim());
