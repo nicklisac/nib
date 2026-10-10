@@ -562,10 +562,10 @@ class CliUi {
           _inThoughtBlock = false;
         }
         final argsSummary = _formatToolArgsSummary(call.name, call.arguments);
-        final topUsed = 9 + call.name.length;
+        final topUsed = 10 + call.name.length;
         final topRule = max(2, 40 - topUsed);
         _writeLine(
-          '  ${theme.muted.text('╭──')} ${theme.warning.text('⚙')} ${theme.accent.text(call.name)} ${theme.muted.text('─' * topRule)}',
+          '  ${theme.muted.text('╭──')} ${theme.warning.text('›_')} ${theme.accent.text(call.name)} ${theme.muted.text('─' * topRule)}',
         );
         if (argsSummary.isNotEmpty) {
           for (final line in argsSummary.split('\n')) {

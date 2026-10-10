@@ -512,7 +512,7 @@ void main() {
         contains('23%'),
         reason: 'the gauge is why the row exists',
       );
-      expect(narrow, contains('⚙'), reason: 'the glyph answers "can I type"');
+      expect(narrow, contains('›_'), reason: 'the glyph answers "can I type"');
     });
 
     test('the row carries no provider, model, path, or endpoint', () {

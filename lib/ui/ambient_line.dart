@@ -354,7 +354,7 @@ class AmbientLine {
         _state == AmbientState.streaming || _state == AmbientState.tool;
     final glyph = switch (_state) {
       AmbientState.streaming => theme.warning.text(_frames[_frameIndex]),
-      AmbientState.tool => theme.warning.text('⚙'),
+      AmbientState.tool => theme.warning.text('›_'),
       AmbientState.interrupted => theme.error.text('✖'),
       AmbientState.idle => theme.muted.text('⏸'),
     };
