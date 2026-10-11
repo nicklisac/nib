@@ -38,6 +38,7 @@ class SlashCommandHandler {
   TranscriptWriter get _out => resolveTranscriptWriter(_writer);
   final TranscriptWriter? _writer;
   void Function()? onRedraw;
+  void Function(NibTheme theme)? onThemePreview;
   void Function(AgentSession session)? onSessionResumed;
 
   SlashCommandHandler(
@@ -46,6 +47,7 @@ class SlashCommandHandler {
     TranscriptWriter? writer,
     this.onRedraw,
     this.onSessionResumed,
+    this.onThemePreview,
   ]) : _writer = writer;
 
   /// Writes one transcript line through the coordinator when it owns the
@@ -775,14 +777,22 @@ class SlashCommandHandler {
       final chosen = await ThemePicker.pickTheme(
         currentTheme: NibTheme.current,
         writer: _out,
-        onPreview: (_) {
-          onRedraw?.call();
+        onPreview: (previewTheme) {
+          if (onThemePreview != null) {
+            onThemePreview!(previewTheme);
+          } else {
+            onRedraw?.call();
+          }
         },
       );
       if (chosen != null) {
         onRedraw?.call();
       } else {
-        onRedraw?.call();
+        if (onThemePreview != null) {
+          onThemePreview!(NibTheme.current);
+        } else {
+          onRedraw?.call();
+        }
       }
       return;
     }

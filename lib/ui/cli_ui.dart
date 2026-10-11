@@ -74,6 +74,12 @@ class CliUi {
     _slashHandler.onRedraw = () {
       redrawScreen();
     };
+    _slashHandler.onThemePreview = (previewTheme) {
+      if (ScreenCoordinator.instance.isActive) {
+        _refreshBand();
+        _ambient.renderDirect();
+      }
+    };
     _slashHandler.onSessionResumed = (loaded) {
       populateRenderModelFromSession(loaded);
       redrawScreen();
@@ -767,6 +773,7 @@ class CliUi {
   /// re-renders all retained transcript blocks through current visibility filters,
   /// and repaints pinned footer and prompt.
   void redrawScreen() {
+    _refreshBand();
     ScreenCoordinator.instance.resetAndClearScreen();
 
     final theme = NibTheme.current;
