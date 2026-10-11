@@ -6,7 +6,6 @@ import '../agent/agent.dart';
 import '../agent/approval_manager.dart';
 import '../agent/config.dart';
 import '../agent/session.dart';
-import '../ai/chat_message.dart';
 import '../ai/image_attachment.dart';
 import 'ambient_line.dart';
 import 'ansi.dart';
@@ -33,10 +32,12 @@ class CliUi {
   final Agent agent;
   final NibConfig? config;
   final SlashCommandHandler _slashHandler;
+  SlashCommandHandler get slashHandler => _slashHandler;
   final PromptReader _promptReader = PromptReader();
 
   /// Retained transcript model for full replay and display filters.
   final TranscriptRenderModel _renderModel = TranscriptRenderModel();
+  TranscriptRenderModel get renderModel => _renderModel;
   bool _thinkingExpanded = true;
   bool _toolsExpanded = true;
 
@@ -73,6 +74,10 @@ class CliUi {
     _slashHandler.onRedraw = () {
       redrawScreen();
     };
+    _slashHandler.onSessionResumed = (loaded) {
+      populateRenderModelFromSession(loaded);
+      redrawScreen();
+    };
     if (config != null && config!.keybindings.isNotEmpty) {
       _promptReader.keyBindings = KeyBindings.fromJson(config!.keybindings);
     }
@@ -105,13 +110,13 @@ class CliUi {
         if (loaded != null) {
           agent.session = loaded;
           populateRenderModelFromSession(loaded);
+          redrawScreen();
           final theme = NibTheme.current;
           _writeLine(
             theme.success.text(
               '  ✔ Switched to session "$chosen" (${loaded.messages.length} messages).',
             ),
           );
-          _promptReader.repaintCurrentLine();
         }
       }
     };
@@ -158,14 +163,19 @@ class CliUi {
     }
 
     try {
-      // Print welcoming Nib banner
-      _writeStreamText(
-        Ansi.banner(
-          model: agent.provider.model,
-          provider: agent.provider.name,
-          workspace: Directory.current.path,
-        ),
-      );
+      if (agent.session.hasUserMessages) {
+        populateRenderModelFromSession(agent.session);
+        redrawScreen();
+      } else {
+        // Print welcoming Nib banner
+        _writeStreamText(
+          Ansi.banner(
+            model: agent.provider.model,
+            provider: agent.provider.name,
+            workspace: Directory.current.path,
+          ),
+        );
+      }
 
       _ambient.showIdle();
 
@@ -776,39 +786,7 @@ class CliUi {
 
   /// Populates the render model from a loaded session transcript.
   void populateRenderModelFromSession(AgentSession session) {
-    _renderModel.clear();
-    for (final msg in session.messages) {
-      switch (msg.role) {
-        case Role.user:
-          if (msg.content != null && msg.content!.isNotEmpty) {
-            _renderModel.add(UserPromptBlock(msg.content!));
-          }
-        case Role.assistant:
-          if (msg.thought != null && msg.thought!.isNotEmpty) {
-            _renderModel.add(ThoughtBlock(msg.thought!));
-          }
-          if (msg.content != null && msg.content!.isNotEmpty) {
-            _renderModel.add(AssistantTextBlock(msg.content!));
-          }
-          if (msg.toolCalls != null) {
-            for (final call in msg.toolCalls!) {
-              _renderModel.add(
-                ToolCallBlock(
-                  toolName: call.name,
-                  arguments: call.arguments,
-                  result: '(executed in past session)',
-                  durationMs: 0,
-                ),
-              );
-            }
-          }
-        case Role.tool:
-          // Tool results are already associated with tool calls or displayed above
-          break;
-        case Role.system:
-          break;
-      }
-    }
+    _renderModel.populateFromSession(session);
   }
 
   /// Word-wraps text paragraphs to fit within [width] characters.

@@ -37,12 +37,14 @@ class SlashCommandHandler {
   TranscriptWriter get _out => resolveTranscriptWriter(_writer);
   final TranscriptWriter? _writer;
   void Function()? onRedraw;
+  void Function(AgentSession session)? onSessionResumed;
 
   SlashCommandHandler(
     this.agent, [
     this.config,
     TranscriptWriter? writer,
     this.onRedraw,
+    this.onSessionResumed,
   ]) : _writer = writer;
 
   /// Writes one transcript line through the coordinator when it owns the
@@ -294,6 +296,9 @@ class SlashCommandHandler {
     }
 
     agent.session = loaded;
+    if (onSessionResumed != null) {
+      onSessionResumed!(loaded);
+    }
     _writeln(
       NibTheme.current.success.text(
         '  ✔ Resumed session "$id" (${loaded.messages.length} messages loaded).',

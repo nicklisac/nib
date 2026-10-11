@@ -1,4 +1,6 @@
 import 'dart:math';
+import '../agent/session.dart';
+import '../ai/chat_message.dart';
 import 'ansi.dart';
 import 'markdown_renderer.dart';
 import 'theme.dart';
@@ -287,6 +289,53 @@ class TranscriptRenderModel {
 
   void clear() {
     _blocks.clear();
+  }
+
+  /// Populates the render model from a loaded session transcript.
+  void populateFromSession(AgentSession session) {
+    clear();
+    final toolResults = <String, String>{};
+    for (final msg in session.messages) {
+      if (msg.role == Role.tool &&
+          msg.toolCallId != null &&
+          msg.content != null) {
+        toolResults[msg.toolCallId!] = msg.content!;
+      }
+    }
+
+    for (final msg in session.messages) {
+      switch (msg.role) {
+        case Role.user:
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            add(UserPromptBlock(msg.content!));
+          }
+        case Role.assistant:
+          if (msg.thought != null && msg.thought!.isNotEmpty) {
+            add(ThoughtBlock(msg.thought!));
+          }
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            add(AssistantTextBlock(msg.content!));
+          }
+          if (msg.toolCalls != null) {
+            for (final call in msg.toolCalls!) {
+              final result =
+                  toolResults[call.id] ?? '(executed in past session)';
+              add(
+                ToolCallBlock(
+                  toolName: call.name,
+                  arguments: call.arguments,
+                  result: result,
+                  durationMs: 0,
+                ),
+              );
+            }
+          }
+        case Role.tool:
+          break;
+        case Role.system:
+          break;
+      }
+    }
   }
 
   /// Renders all blocks to terminal lines using current visibility settings.

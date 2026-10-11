@@ -315,9 +315,9 @@ class ScreenCoordinator implements TranscriptWriter {
       _applyScrollRegion();
       if (_bandLines.isNotEmpty) _paintBand(replacing: _bandLines.length);
       renderQueue();
-      _transcriptRow = scrollBottom;
+      _transcriptRow = scrollTop;
       _transcriptCol = 1;
-      _out('\x1B[$scrollBottom;1H');
+      _out('\x1B[$scrollTop;1H');
     }
   }
 
