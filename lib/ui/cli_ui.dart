@@ -224,10 +224,6 @@ class CliUi {
           continue;
         }
 
-        if (ScreenCoordinator.instance.isActive) {
-          renderUserTurn(trimmed);
-        }
-
         // Check slash commands (/help, /clear, /undo, /theme, etc.)
         if (await _slashHandler.handle(trimmed)) {
           // /provider, /model, /mock and /theme change what the band says.
@@ -239,10 +235,17 @@ class CliUi {
           final invocation = _slashHandler.pendingInvocation;
           if (invocation != null) {
             _slashHandler.pendingInvocation = null;
+            if (ScreenCoordinator.instance.isActive) {
+              renderUserTurn(invocation);
+            }
             await _executeAgentTurn(invocation);
             await _afterTurn();
           }
           continue;
+        }
+
+        if (ScreenCoordinator.instance.isActive) {
+          renderUserTurn(trimmed);
         }
 
         // Check for attached images from /image or prompt mentions/paths

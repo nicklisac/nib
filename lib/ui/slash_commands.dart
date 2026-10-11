@@ -16,6 +16,7 @@ import 'markdown_renderer.dart';
 import 'session_picker.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
+import 'theme_picker.dart';
 import 'transcript_writer.dart';
 
 /// Handles slash commands within the interactive CLI loop.
@@ -127,7 +128,7 @@ class SlashCommandHandler {
         return true;
 
       case '/theme':
-        _handleTheme(args);
+        await _handleTheme(args);
         return true;
 
       case '/confirm':
@@ -769,29 +770,38 @@ class SlashCommandHandler {
     }
   }
 
-  void _handleTheme(List<String> args) {
+  Future<void> _handleTheme(List<String> args) async {
     if (args.isEmpty) {
-      _writeln();
-      _writeln(Ansi.boldText('Available TrueColor Themes:'));
-      for (final t in NibTheme.allThemes.values) {
-        final isActive = t.id == NibTheme.current.id;
-        final marker = isActive ? ' (active)' : '';
-        _writeln(
-          '  • ${t.accent.text(t.id.padRight(12))} - ${t.secondary.text(t.displayName)}$marker',
-        );
+      final chosen = await ThemePicker.pickTheme(
+        currentTheme: NibTheme.current,
+        writer: _out,
+        onPreview: (_) {
+          onRedraw?.call();
+        },
+      );
+      if (chosen != null) {
+        onRedraw?.call();
+      } else {
+        onRedraw?.call();
       }
-      _writeln('\n  Usage: /theme <name> (e.g. /theme tokyonight)');
-      _writeln();
       return;
     }
 
-    final target = args[0].toLowerCase().trim();
-    if (NibTheme.allThemes.containsKey(target)) {
-      NibTheme.setTheme(target);
-      final active = NibTheme.current;
-      _writeln(
-        active.success.text('  ✔ Switched theme to ${active.displayName}'),
-      );
+    final target = args[0].toLowerCase().trim().replaceAll('_', '-');
+    final aliases = <String, String>{
+      'rose-pine': 'rosepine',
+      'monokai-pro': 'monokai',
+      'one-dark': 'onedark',
+      'solarized': 'solarized-dark',
+      'github': 'github-dark',
+      'synthwave84': 'synthwave',
+      'synthwave-84': 'synthwave',
+    };
+    final resolved = aliases[target] ?? target;
+
+    if (NibTheme.allThemes.containsKey(resolved)) {
+      NibTheme.setTheme(resolved);
+      onRedraw?.call();
     } else {
       _writeln(
         Ansi.yellowText(
