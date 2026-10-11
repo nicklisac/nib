@@ -49,6 +49,11 @@ class CliUi {
   );
 
   bool _inThoughtBlock = false;
+
+  /// The uncommitted thought/text of the running turn, so a mid-turn redraw
+  /// (Ctrl+T, Ctrl+L) can repaint what has streamed so far.
+  StringBuffer? _activeThoughtBuffer;
+  StringBuffer? _activeTextBuffer;
   bool _isExecutingTurn = false;
   DateTime? _lastSigintTime;
   StreamSubscription<ProcessSignal>? _sigintSub;
@@ -606,11 +611,14 @@ class CliUi {
 
     final currentThoughtBuffer = StringBuffer();
     final currentTextBuffer = StringBuffer();
+    _activeThoughtBuffer = currentThoughtBuffer;
+    _activeTextBuffer = currentTextBuffer;
 
     final callbacks = AgentCallbacks(
       onThoughtDelta: (thought) {
         _ambient.recordToken();
         currentThoughtBuffer.write(thought);
+        if (!_thinkingExpanded) return;
         if (!_inThoughtBlock) {
           _writeStreamText('  ${theme.muted.text('➸⊚ ')}');
           _inThoughtBlock = true;
@@ -744,6 +752,8 @@ class CliUi {
       }
       _renderModel.add(StatusBlock('  ${theme.muted.text('─' * 38)}'));
       _isExecutingTurn = false;
+      _activeThoughtBuffer = null;
+      _activeTextBuffer = null;
       TerminalManager.instance.clearBuffer();
     }
 
@@ -788,6 +798,40 @@ class CliUi {
 
     for (final line in renderedLines) {
       ScreenCoordinator.instance.writeTranscript('$line\n');
+    }
+
+    _inThoughtBlock = false;
+    if (_isExecutingTurn) {
+      final thought = _activeThoughtBuffer?.toString() ?? '';
+      final text = _activeTextBuffer?.toString() ?? '';
+      if (thought.trim().isNotEmpty) {
+        final prefix = '  ${theme.muted.text('➸⊚ ')}';
+        if (_thinkingExpanded) {
+          ScreenCoordinator.instance.writeTranscript(
+            '$prefix${theme.muted.text(thought.trimLeft())}',
+          );
+          if (text.isEmpty) {
+            // Later deltas continue this same line.
+            _inThoughtBlock = true;
+          } else {
+            ScreenCoordinator.instance.writeTranscript('\n\n');
+          }
+        } else {
+          ScreenCoordinator.instance.writeTranscript(
+            '$prefix${theme.muted.text('[thinking collapsed — Ctrl+T to expand]')}\n',
+          );
+        }
+      }
+      // Only completed lines: the markdown printer still owns the partial one.
+      final cut = text.lastIndexOf('\n');
+      if (cut >= 0) {
+        final done = text.substring(0, cut);
+        if (done.trim().isNotEmpty) {
+          for (final line in MarkdownRenderer.render(done, theme).split('\n')) {
+            ScreenCoordinator.instance.writeTranscript('$line\n');
+          }
+        }
+      }
     }
 
     _ambient.showIdle();
