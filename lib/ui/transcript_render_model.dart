@@ -59,12 +59,12 @@ class ThoughtBlock extends TranscriptBlock {
 
     final lines = <String>[];
     if (thinkingExpanded) {
-      lines.add('  ${theme.muted.text('§ ')}${theme.muted.text(clean)}');
+      lines.add('  ${theme.muted.text('➸⊚ ')}${theme.muted.text(clean)}');
       lines.add('');
     } else {
       // Collapsed: single compact summary line
       lines.add(
-        '  ${theme.muted.text('§ ')}${theme.muted.text('[thinking collapsed — Ctrl+T to expand]')}',
+        '  ${theme.muted.text('➸⊚ ')}${theme.muted.text('[thinking collapsed — Ctrl+T to expand]')}',
       );
     }
     return lines;

@@ -357,7 +357,9 @@ class AmbientLine {
         _state == AmbientState.streaming || _state == AmbientState.tool;
     final glyph = switch (_state) {
       AmbientState.streaming => theme.warning.text(_frames[_frameIndex]),
-      AmbientState.tool => theme.warning.text('›_'),
+      AmbientState.tool => theme.warning.text(
+        _frameIndex % 2 == 0 ? '›_' : '› ',
+      ),
       AmbientState.interrupted => theme.error.text('✖'),
       AmbientState.idle => theme.muted.text('⏸'),
     };
@@ -409,8 +411,8 @@ class AmbientLine {
 
     final thinkLabel = agent.thinkingLevel.label;
     fields[AmbientField.thinkingLevel] = agent.thinkingLevel.isOff
-        ? theme.muted.text('§ off')
-        : theme.secondary.text('§ $thinkLabel');
+        ? theme.muted.text('➸⊚ off')
+        : theme.secondary.text('➸⊚ $thinkLabel');
 
     final undoCount = UndoManager.instance.count;
     if (undoCount > 0) {

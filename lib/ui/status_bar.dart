@@ -11,11 +11,11 @@ import 'theme.dart';
 /// and follows that exchange into history. Present-tense state belongs to the
 /// ambient line, not here.
 ///
-/// It is also the *fallback* for the pinned top header, printed when there is no
-/// header to pin: a non-TTY run, or a terminal too short to spare a row. That is
-/// why it is a superset of [headerSegments] — the static facts plus the live
+/// It is also the *fallback* for the pinned bottom band, printed when there is
+/// no band to pin: a non-TTY run, or a terminal too short to spare a row. That is
+/// why it is a superset of [bandSegments] — the static facts plus the live
 /// ones it can afford to show as a snapshot — so whichever of the two is on
-/// screen, no fact has been lost. [headerSegments] is the authority on which
+/// screen, no fact has been lost. [bandSegments] is the authority on which
 /// facts are static.
 ///
 /// Deliberately absent: the endpoint URL, which is redundant next to provider and
@@ -30,7 +30,7 @@ import 'theme.dart';
 /// defended against every repaint (rule 1).
 class StatusBar {
   /// The facts that change only when you switch provider, model, folder, or
-  /// theme — the pinned top header, one list entry per fact.
+  /// theme — the pinned bottom band, one list entry per fact.
   ///
   /// Thinking level and undo count are *not* here even though the dock used to
   /// show them: `ctrl+t` cycles the thinking level mid-session and undo count
@@ -38,19 +38,19 @@ class StatusBar {
   ///
   /// The compaction threshold *is* here, because it is fixed by config for the
   /// life of the session and because rule 5 wants it visible before compaction
-  /// fires. With a header pinned the dock never prints, so the header is the only
+  /// fires. With a band pinned the dock never prints, so the band is the only
   /// place that reading can live.
   ///
-  /// Deliberately unstyled: the header band paints with reverse video, and any
-  /// themed text here would end its segment with a reset that drops the band
-  /// mid-row. The inversion is the styling.
-  static List<String> headerSegments(Agent agent) {
+  /// Themed per segment like the dock's badges: the band rows carry no
+  /// background of their own, so each fact's color is its own.
+  static List<String> bandSegments(Agent agent) {
+    final theme = NibTheme.current;
     return [
-      '✒  Nib',
-      agent.provider.name,
-      agent.provider.model,
-      '⌂ ${p.basename(Directory.current.path)}',
-      agent.meter.thresholdLabel,
+      '${theme.accent.text('✒')}  ${theme.primary.text('Nib')}',
+      theme.accent.text(agent.provider.name),
+      theme.secondary.text(agent.provider.model),
+      theme.muted.text('⌂ ${p.basename(Directory.current.path)}'),
+      theme.muted.text(agent.meter.thresholdLabel),
     ];
   }
 
@@ -75,7 +75,7 @@ class StatusBar {
     final pBadge = '${theme.surface.bg}${theme.accent.fg} $provName \x1B[0m';
     final mBadge = '${theme.surface.bg}${theme.primary.fg} $shortModel \x1B[0m';
     final thinkBadge =
-        '${theme.surface.bg}${theme.secondary.fg} § ${agent.thinkingLevel.label} \x1B[0m';
+        '${theme.surface.bg}${theme.secondary.fg} ➸⊚ ${agent.thinkingLevel.label} \x1B[0m';
     final dirBadge = theme.muted.text('⌂ $cwd');
     final undoBadge = undoCount > 0
         ? ' ${theme.warning.text('⤺ undo: $undoCount')}'

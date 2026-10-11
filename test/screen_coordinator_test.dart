@@ -1,5 +1,4 @@
 import 'package:nib/ui/screen_coordinator.dart';
-import 'package:nib/ui/theme.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -180,52 +179,66 @@ void main() {
     );
   });
 
-  /// #27: static session facts pinned at the top, live telemetry alone at the
-  /// bottom. The header is a band the transcript may never scroll through.
-  group('pinned top header', () {
-    final facts = ['Nib', 'exllama', 'Qwen3-Next', '⌂ dart-tui'];
+  /// Static session facts pinned in an inverted band at the bottom of the
+  /// footer, above the telemetry row. The band is chrome the transcript may
+  /// never scroll through, and the scroll region always starts at row 1 so
+  /// emulators keep feeding scrollback.
+  group('pinned bottom facts band', () {
+    final facts = ['Nib', 'exllama', 'Qwen3-Next', '\u2302 dart-tui'];
 
     test(
-      'a header that fits takes one row and pushes the scroll region down',
+      'a band that fits takes one row above the status row, region from row 1',
       () {
         final writes = <String>[];
         final coord = ScreenCoordinator.forTesting(out: writes.add);
         coord.setTestDimensions(lines: 30, cols: 80);
 
-        expect(coord.activate(header: facts), isTrue);
+        expect(coord.activate(band: facts), isTrue);
 
-        expect(coord.headerLines, equals(1));
-        expect(coord.scrollTop, equals(2));
-        expect(coord.scrollBottom, equals(26));
-        expect(coord.transcriptRow, equals(26));
+        expect(coord.bandLines, equals(1));
+        expect(coord.scrollTop, equals(1));
+        expect(coord.scrollBottom, equals(25));
+        expect(coord.bandStartRow, equals(30));
+        expect(coord.statusRow, equals(29));
+        expect(coord.transcriptRow, equals(25));
 
-        // Region starts below the header, not at row 1
-        expect(writes, contains('\x1B7\x1B[2;26r\x1B8'));
-        // Header painted on row 1 only, with the theme inverted (text color
-        // as background) so the band reads as chrome, not chat history.
-        expect(writes.any((w) => w.contains('\x1B[2;1H\x1B[2KNib')), isFalse);
-        final band = NibTheme.current.primary.bg;
+        // Region spans row 1: a top margin below row 1 would stop the
+        // emulator pushing scrolled lines into scrollback.
+        expect(writes, contains('\x1B7\x1B[1;25r\x1B8'));
+        // Band painted on row 30, the last row of the screen, with a plain
+        // erase and themed segments: no background of its own.
         expect(
-          writes.any((w) => w.contains('\x1B[1;1H$band\x1B[2K')),
+          writes.any((w) => w.contains('\x1B[30;1H\x1B[2K')),
           isTrue,
-          reason: 'row 1 must be painted with the theme background active',
+          reason: 'the band row must be painted with a plain erase',
+        );
+        expect(
+          writes.any((w) => w.contains('\x1B[48;2;')),
+          isFalse,
+          reason: 'the band carries no background color',
+        );
+        expect(
+          writes.any((w) => w.contains('\x1B[29;1H')),
+          isFalse,
+          reason:
+              'the telemetry row above the band belongs to the ambient line',
         );
       },
     );
 
-    test('the header never emits a newline, so it cannot scroll itself away', () {
+    test('the band never emits a newline, so it cannot scroll itself away', () {
       final writes = <String>[];
       final coord = ScreenCoordinator.forTesting(out: writes.add);
       coord.setTestDimensions(lines: 30, cols: 80);
-      coord.activate(header: facts);
+      coord.activate(band: facts);
 
       writes.clear();
-      coord.setHeader([...facts, 'extra fact'], width: 80);
-      coord.renderHeader();
+      coord.setBand([...facts, 'extra fact'], width: 80);
+      coord.renderBand();
 
       // Nothing written between cursor-save and cursor-restore may contain a
-      // newline: row 1 is outside the scroll region, so a newline there scrolls
-      // the header off screen.
+      // newline: the band rows are outside the scroll region, and the human's
+      // cursor is restored from wherever it was.
       final paints = writes.where(
         (w) => w.contains(';1H') && w.contains('\x1B[2K'),
       );
@@ -236,121 +249,117 @@ void main() {
     });
 
     test(
-      'a header too wide for one row takes two rather than dropping a fact',
+      'a band too wide for one row takes two rather than dropping a fact',
       () {
         final coord = ScreenCoordinator.forTesting(out: (_) {});
-        coord.setTestDimensions(lines: 30, cols: 40);
-        coord.activate(header: facts);
+        coord.setTestDimensions(lines: 30, cols: 120);
+        coord.activate(band: facts);
 
-        // Joined at 40 cols this run does not fit one row.
-        coord.setHeader([
+        coord.setBand([
           'Nib',
           'anthropic',
           'claude-3-7-sonnet-20250219',
-          '⌂ dart-tui',
+          '\u2302 dart-tui',
         ], width: 40);
 
-        expect(coord.headerLines, equals(2));
-        expect(coord.scrollTop, equals(3));
+        expect(coord.bandLines, equals(2));
+        expect(coord.bandStartRow, equals(29));
         // Every fact survives the split somewhere across the two rows.
-        final joined = coord.headerContent.join(' ');
+        final joined = coord.bandContent.join(' ');
         for (final fact in [
           'Nib',
           'anthropic',
           'claude-3-7-sonnet-20250219',
-          '⌂ dart-tui',
+          '\u2302 dart-tui',
         ]) {
           expect(joined, contains(fact));
         }
       },
     );
 
-    test(
-      'a terminal too short to spare a row gets no header and reports it',
-      () {
-        final coord = ScreenCoordinator.forTesting(out: (_) {});
-        coord.setTestDimensions(lines: 10, cols: 80);
+    test('a terminal too short to spare a row gets no band and reports it', () {
+      final coord = ScreenCoordinator.forTesting(out: (_) {});
+      coord.setTestDimensions(lines: 10, cols: 80);
 
-        // footer(4) + minimum transcript(6) already fills a 10-row terminal.
-        expect(coord.activate(header: facts), isFalse);
-        expect(coord.headerLines, equals(0));
-        expect(coord.scrollTop, equals(1));
-        // The transcript keeps every row the footer does not need.
-        expect(coord.scrollBottom, equals(6));
-      },
-    );
+      // footer(4) + minimum transcript(6) already fills a 10-row terminal.
+      expect(coord.activate(band: facts), isFalse);
+      expect(coord.bandLines, equals(0));
+      expect(coord.scrollTop, equals(1));
+      // The transcript keeps every row the footer does not need.
+      expect(coord.scrollBottom, equals(6));
+    });
 
-    test('header yields its rows before the footer gives up any', () {
+    test('band yields its rows before the footer gives up any', () {
       final coord = ScreenCoordinator.forTesting(out: (_) {});
       coord.setTestDimensions(lines: 12, cols: 80);
-      coord.activate(header: facts);
+      coord.activate(band: facts);
 
-      // 12 rows: footer 4, minimum transcript 6, so exactly 2 rows are spare and
-      // the header keeps one of them.
-      expect(coord.headerLines, equals(1));
-      expect(coord.scrollTop, equals(2));
-      expect(coord.scrollBottom, equals(8));
+      // 12 rows: footer 4 without band, minimum transcript 6, so exactly 2
+      // rows are spare and the band keeps one of them.
+      expect(coord.bandLines, equals(1));
+      expect(coord.scrollTop, equals(1));
+      expect(coord.scrollBottom, equals(7));
       expect(coord.scrollBottom - coord.scrollTop + 1, greaterThanOrEqualTo(6));
     });
 
+    test('a band collapsing from two rows to one clears the orphaned row', () {
+      final writes = <String>[];
+      final coord = ScreenCoordinator.forTesting(out: writes.add);
+      coord.setTestDimensions(lines: 30, cols: 30);
+      coord.activate(
+        band: ['Nib', 'anthropic', 'a-long-model-name', '\u2302 dart-tui'],
+      );
+      expect(coord.bandLines, equals(2));
+      expect(coord.bandStartRow, equals(29));
+
+      writes.clear();
+      coord.setBand(['Nib', 'exllama'], width: 80);
+
+      expect(coord.bandLines, equals(1));
+      expect(coord.bandStartRow, equals(30));
+      // The released row (the band's old top) is erased with attributes
+      // reset, so no band background survives on a row the status row moved
+      // up into.
+      expect(writes, contains('\x1B[29;1H\x1B[0m\x1B[2K'));
+      expect(coord.scrollTop, equals(1));
+    });
+
     test(
-      'a header collapsing from two rows to one clears the orphaned row',
+      'a resize re-fits the band and re-sets the region when rows change',
       () {
         final writes = <String>[];
         final coord = ScreenCoordinator.forTesting(out: writes.add);
         coord.setTestDimensions(lines: 30, cols: 30);
         coord.activate(
-          header: ['Nib', 'anthropic', 'a-long-model-name', '⌂ dart-tui'],
+          band: ['Nib', 'anthropic', 'a-long-model-name', '\u2302 dart-tui'],
         );
-        expect(coord.headerLines, equals(2));
-
-        writes.clear();
-        coord.setHeader(['Nib', 'exllama'], width: 80);
-
-        expect(coord.headerLines, equals(1));
-        // The released row is erased with attributes reset, so no reverse
-        // video survives on a row the transcript now owns.
-        expect(writes, contains('\x1B[2;1H\x1B[0m\x1B[2K'));
-        expect(coord.scrollTop, equals(2));
-      },
-    );
-
-    test(
-      'a resize re-fits the header and re-sets the region when rows change',
-      () {
-        final writes = <String>[];
-        final coord = ScreenCoordinator.forTesting(out: writes.add);
-        coord.setTestDimensions(lines: 30, cols: 30);
-        coord.activate(
-          header: ['Nib', 'anthropic', 'a-long-model-name', '⌂ dart-tui'],
-        );
-        expect(coord.headerLines, equals(2));
-        expect(writes, contains('\x1B7\x1B[3;26r\x1B8'));
+        expect(coord.bandLines, equals(2));
+        expect(writes, contains('\x1B7\x1B[1;24r\x1B8'));
 
         writes.clear();
         coord.setTestDimensions(lines: 30, cols: 120);
         coord.updateTerminalSize();
 
-        expect(coord.headerLines, equals(1));
-        expect(coord.scrollTop, equals(2));
-        expect(writes, contains('\x1B7\x1B[2;26r\x1B8'));
+        expect(coord.bandLines, equals(1));
+        expect(coord.scrollTop, equals(1));
+        expect(writes, contains('\x1B7\x1B[1;25r\x1B8'));
       },
     );
 
     test(
-      'a prompt growing to multi-line pushes the header out, not the transcript',
+      'a prompt growing to multi-line pushes the band out, not the transcript',
       () {
         final coord = ScreenCoordinator.forTesting(out: (_) {});
         coord.setTestDimensions(lines: 12, cols: 80);
-        coord.activate(header: ['Nib', 'exllama', 'Qwen3', '⌂ dart-tui']);
-        expect(coord.headerLines, equals(1));
+        coord.activate(band: ['Nib', 'exllama', 'Qwen3', '\u2302 dart-tui']);
+        expect(coord.bandLines, equals(1));
         final rowsBefore = coord.scrollBottom - coord.scrollTop + 1;
 
         coord.updatePromptLines(3);
 
         final rowsAfter = coord.scrollBottom - coord.scrollTop + 1;
-        // The header surrenders its row so the transcript keeps its floor.
-        expect(coord.headerLines, equals(0));
+        // The band surrenders its row so the transcript keeps its floor.
+        expect(coord.bandLines, equals(0));
         expect(
           rowsAfter,
           greaterThanOrEqualTo(rowsBefore - 2),
@@ -364,46 +373,62 @@ void main() {
       },
     );
 
-    test('the header comes back when the prompt shrinks again', () {
+    test('the band comes back when the prompt shrinks again', () {
       final coord = ScreenCoordinator.forTesting(out: (_) {});
       coord.setTestDimensions(lines: 12, cols: 80);
-      coord.activate(header: ['Nib', 'exllama', 'Qwen3', '⌂ dart-tui']);
+      coord.activate(band: ['Nib', 'exllama', 'Qwen3', '\u2302 dart-tui']);
       coord.updatePromptLines(3);
-      expect(coord.headerLines, equals(0));
+      expect(coord.bandLines, equals(0));
 
       coord.updatePromptLines(1);
-      expect(coord.headerLines, equals(1));
+      expect(coord.bandLines, equals(1));
     });
 
     test('transcript stays a valid DECSTBM region at every terminal size', () {
-      // DECSTBM requires top < bottom; a violated region is silently ignored by
-      // the terminal, which shows up as output overwriting the footer. Swept
+      // DECSTBM requires top < bottom; a violated region is silently ignored
+      // by the terminal, which shows up as output overwriting the footer. The
+      // top is always 1 now, so the invariant is scrollBottom > 1. Swept
       // across sizes and prompt/queue growth rather than spot-checked.
       for (var lines = 10; lines <= 60; lines++) {
         for (var cols = 40; cols <= 160; cols += 10) {
-          for (final header in [
+          for (final band in [
             const <String>[],
             [
               'Nib',
               'exllama',
               'Qwen3-Next-Heavy',
-              '⌂ dart-tui',
+              '\u2302 dart-tui',
               'compact at 111.6k',
             ],
           ]) {
             final coord = ScreenCoordinator.forTesting(out: (_) {});
             coord.setTestDimensions(lines: lines, cols: cols);
-            coord.activate(header: header);
+            coord.activate(band: band);
             for (final prompt in [1, 2, 4, 8]) {
               coord.updatePromptLines(prompt);
               for (final queue in [0, 1, 3, 6]) {
                 coord.setQueued(List.generate(queue, (i) => 'queued $i'));
                 expect(
                   coord.scrollTop,
+                  equals(1),
+                  reason:
+                      'lines=$lines cols=$cols band=${band.length} '
+                      'prompt=$prompt queue=$queue: region top must stay at '
+                      'row 1 or scrollback dies',
+                );
+                expect(
+                  coord.scrollTop,
                   lessThan(coord.scrollBottom),
                   reason:
-                      'lines=$lines cols=$cols header=${header.length} '
+                      'lines=$lines cols=$cols band=${band.length} '
                       'prompt=$prompt queue=$queue',
+                );
+                expect(
+                  coord.scrollBottom,
+                  lessThan(coord.bandStartRow),
+                  reason:
+                      'lines=$lines cols=$cols: transcript must never reach '
+                      'a band row',
                 );
               }
             }
@@ -412,44 +437,57 @@ void main() {
       }
     });
 
-    test('deactivate clears header rows and restores full margins', () {
+    test('deactivate clears band rows and restores full margins', () {
       final writes = <String>[];
       final coord = ScreenCoordinator.forTesting(out: writes.add);
       coord.setTestDimensions(lines: 30, cols: 80);
-      coord.activate(header: facts);
+      coord.activate(band: facts);
 
       writes.clear();
       coord.deactivate();
 
-      expect(writes, contains('\x1B[1;1H\x1B[2K'));
+      expect(writes, contains('\x1B[30;1H\x1B[2K'));
       expect(writes, contains('\x1B[r'));
     });
 
-    test('transcript output is clamped inside the region below the header', () {
+    test('transcript output is clamped inside the region above the band', () {
       final writes = <String>[];
       final coord = ScreenCoordinator.forTesting(out: writes.add);
       coord.setTestDimensions(lines: 30, cols: 80);
-      coord.activate(header: facts);
+      coord.activate(band: facts);
 
       writes.clear();
       coord.writeTranscript('hello\n');
 
-      expect(writes, contains('\x1B[26;1H'));
-      // Never positioned on the header row
-      expect(writes.any((w) => RegExp(r'\x1B\[1;\d+H').hasMatch(w)), isFalse);
+      expect(writes, contains('\x1B[25;1H'));
+      // Never positioned on the status row or the band row
+      expect(
+        writes.any((w) => RegExp(r'\x1B\[(29|30);\d+H').hasMatch(w)),
+        isFalse,
+      );
+    });
+
+    test('clearPromptArea stops above the band, never flashing its rows', () {
+      final writes = <String>[];
+      final coord = ScreenCoordinator.forTesting(out: writes.add);
+      coord.setTestDimensions(lines: 30, cols: 80);
+      coord.activate(initialPromptLines: 2, band: facts);
+
+      writes.clear();
+      coord.clearPromptArea();
+
+      // Prompt rows are cleared; the status row (29) and band row (30) are not.
+      expect(writes.any((w) => w.contains('\x1B[29;1H')), isFalse);
+      expect(writes.any((w) => w.contains('\x1B[30;1H')), isFalse);
     });
   });
 
-  /// Slash commands and the session picker write through the coordinator while
-  /// it owns the screen. These guard the /history-invisible and /resume-menu-
-  /// below-the-input regressions: output must enter the scroll region at the
-  /// tracked row, and a menu's rewind must never reach into the footer.
   group('transcript writer routing', () {
     test('writeLine lands in the region and advances the tracked row', () {
       final writes = <String>[];
       final coord = ScreenCoordinator.forTesting(out: writes.add);
       coord.setTestDimensions(lines: 30, cols: 80);
-      coord.activate(header: ['Nib', 'exllama', 'Qwen3']);
+      coord.activate(band: ['Nib', 'exllama', 'Qwen3']);
       // activate parks the cursor at scrollBottom; a newline there scrolls the
       // region and the tracked row clamps rather than running past the bottom.
       final rowBefore = coord.transcriptRow;
@@ -473,7 +511,7 @@ void main() {
         final writes = <String>[];
         final coord = ScreenCoordinator.forTesting(out: writes.add);
         coord.setTestDimensions(lines: 30, cols: 80);
-        coord.activate(header: ['Nib', 'exllama', 'Qwen3']);
+        coord.activate(band: ['Nib', 'exllama', 'Qwen3']);
         for (var i = 0; i < 8; i++) {
           coord.writeLine('menu row $i');
         }
@@ -500,7 +538,7 @@ void main() {
     test('rewind clamps at the region top when the block scrolled away', () {
       final coord = ScreenCoordinator.forTesting(out: (_) {});
       coord.setTestDimensions(lines: 14, cols: 80);
-      coord.activate(header: ['Nib', 'exllama', 'Qwen3']);
+      coord.activate(band: ['Nib', 'exllama', 'Qwen3']);
       for (var i = 0; i < 20; i++) {
         coord.writeLine('menu row $i');
       }

@@ -537,10 +537,10 @@ void main() {
     });
   });
 
-  group('Pinned header owns the static facts (#27)', () {
+  group('Pinned band owns the static facts (#27)', () {
     Agent buildAgent() => Agent(
       provider: MockProvider(),
-      session: AgentSession(id: 'header-test')
+      session: AgentSession(id: 'band-test')
         ..addMessage(ChatMessage.user('hello there')),
       contextWindow: 262144,
     );
@@ -548,17 +548,17 @@ void main() {
     String plain(String styled) =>
         styled.replaceAll(RegExp(r'\x1B\[[0-9;]*[a-zA-Z]'), '');
 
-    test('the header names provider, model, and workspace', () {
-      final segments = StatusBar.headerSegments(buildAgent()).map(plain);
+    test('the band names provider, model, and workspace', () {
+      final segments = StatusBar.bandSegments(buildAgent()).map(plain);
       expect(segments, contains('Mock (Offline Demo)'));
       expect(segments, contains('mock-agent-v1'));
       expect(segments, contains('⌂ ${p.basename(Directory.current.path)}'));
     });
 
-    test('the header carries the compaction threshold the dock used to', () {
+    test('the band carries the compaction threshold the dock used to', () {
       // Rule 5: the threshold must be visible before compaction fires. With a
-      // header pinned the dock never prints, so the header has to hold it.
-      final segments = StatusBar.headerSegments(buildAgent()).map(plain);
+      // band pinned the dock never prints, so the band has to hold it.
+      final segments = StatusBar.bandSegments(buildAgent()).map(plain);
       expect(
         segments.any((s) => s.contains('compact at')),
         isTrue,
@@ -566,8 +566,8 @@ void main() {
       );
     });
 
-    test('the header holds no live telemetry the bottom row already owns', () {
-      final segments = StatusBar.headerSegments(buildAgent()).map(plain);
+    test('the band holds no live telemetry the bottom row already owns', () {
+      final segments = StatusBar.bandSegments(buildAgent()).map(plain);
       for (final forbidden in ['tok/s', '%', '§', '⏎', 'queued']) {
         expect(
           segments.any((s) => s.contains(forbidden)),
@@ -581,10 +581,10 @@ void main() {
       final agent = buildAgent();
       final line = AmbientLine(agent: agent, meter: agent.meter);
       line.startTurn();
-      expect(plain(line.render(width: 100)), contains('§'));
+      expect(plain(line.render(width: 100)), contains('➸⊚'));
       expect(
-        StatusBar.headerSegments(agent).map(plain).join(' '),
-        isNot(contains('§')),
+        StatusBar.bandSegments(agent).map(plain).join(' '),
+        isNot(contains('➸⊚')),
       );
     });
   });
