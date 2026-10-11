@@ -224,7 +224,13 @@ class Agent {
           final assistantText = partial.isNotEmpty
               ? '$partial\n\n[Interrupted by user]'
               : '[Interrupted by user]';
-          session.addMessage(ChatMessage.assistant(assistantText));
+          final thoughtText = thoughtBuffer.toString().trim();
+          session.addMessage(
+            ChatMessage.assistant(
+              assistantText,
+              thought: thoughtText.isNotEmpty ? thoughtText : null,
+            ),
+          );
           await session.saveToDisk();
         }
         return;
@@ -232,9 +238,11 @@ class Agent {
 
       // Record assistant message
       final assistantContent = textBuffer.toString();
+      final thoughtContent = thoughtBuffer.toString().trim();
       session.addMessage(
         ChatMessage.assistant(
           assistantContent,
+          thought: thoughtContent.isNotEmpty ? thoughtContent : null,
           toolCalls: toolCalls.isNotEmpty ? toolCalls : null,
         ),
       );

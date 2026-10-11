@@ -46,6 +46,7 @@ class ToolCall {
 class ChatMessage {
   final Role role;
   final String? content;
+  final String? thought;
   final List<ToolCall>? toolCalls;
   final String? toolCallId;
   final String? toolName;
@@ -54,6 +55,7 @@ class ChatMessage {
   ChatMessage({
     required this.role,
     this.content,
+    this.thought,
     this.toolCalls,
     this.toolCallId,
     this.toolName,
@@ -66,8 +68,16 @@ class ChatMessage {
   factory ChatMessage.user(String content, {List<ImageAttachment>? images}) =>
       ChatMessage(role: Role.user, content: content, images: images);
 
-  factory ChatMessage.assistant(String content, {List<ToolCall>? toolCalls}) =>
-      ChatMessage(role: Role.assistant, content: content, toolCalls: toolCalls);
+  factory ChatMessage.assistant(
+    String content, {
+    String? thought,
+    List<ToolCall>? toolCalls,
+  }) => ChatMessage(
+    role: Role.assistant,
+    content: content,
+    thought: thought,
+    toolCalls: toolCalls,
+  );
 
   factory ChatMessage.toolResult({
     required String toolCallId,
@@ -83,6 +93,7 @@ class ChatMessage {
   Map<String, dynamic> toJson() => {
     'role': role.name,
     'content': content,
+    if (thought != null && thought!.isNotEmpty) 'thought': thought,
     'tool_calls': toolCalls?.map((t) => t.toJson()).toList(),
     'tool_call_id': toolCallId,
     'tool_name': toolName,
@@ -106,6 +117,7 @@ class ChatMessage {
     return ChatMessage(
       role: role,
       content: json['content'] as String?,
+      thought: json['thought'] as String?,
       toolCalls: toolCalls,
       toolCallId: json['tool_call_id'] as String?,
       toolName: json['tool_name'] as String?,

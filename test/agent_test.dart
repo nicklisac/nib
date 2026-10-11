@@ -49,6 +49,63 @@ void main() {
       expect(session.messages.length, equals(1)); // keeps system prompt
     });
 
+    test(
+      'ChatMessage persists thought field to JSON and excludes it from provider payloads',
+      () {
+        final msg = ChatMessage.assistant(
+          'Here is the result',
+          thought: 'Let me think through this step by step...',
+        );
+
+        // Verify toJson includes thought
+        final json = msg.toJson();
+        expect(
+          json['thought'],
+          equals('Let me think through this step by step...'),
+        );
+        expect(json['content'], equals('Here is the result'));
+
+        // Verify fromJson deserializes thought
+        final restored = ChatMessage.fromJson(json);
+        expect(
+          restored.thought,
+          equals('Let me think through this step by step...'),
+        );
+        expect(restored.content, equals('Here is the result'));
+
+        // Verify toOpenAiJson excludes thought so provider does not reject unknown field
+        final openAiPayload = msg.toOpenAiJson();
+        expect(openAiPayload.containsKey('thought'), isFalse);
+        expect(openAiPayload['content'], equals('Here is the result'));
+      },
+    );
+
+    test(
+      'Agent turn with reasoning traces saves thought to session on disk',
+      () async {
+        final session = AgentSession();
+        final agent = Agent(provider: MockProvider(), session: session);
+
+        await agent.runTurn('test reasoning turn');
+
+        expect(session.messages.length, greaterThanOrEqualTo(3));
+        final assistantMsg = session.messages.lastWhere(
+          (m) => m.role == Role.assistant,
+        );
+        expect(assistantMsg.thought, isNotNull);
+        expect(assistantMsg.thought, isNotEmpty);
+
+        // Verify saved to disk and reloadable
+        await session.saveToDisk();
+        final loaded = await AgentSession.loadFromDisk(session.id);
+        expect(loaded, isNotNull);
+        final loadedAssistantMsg = loaded!.messages.lastWhere(
+          (m) => m.role == Role.assistant,
+        );
+        expect(loadedAssistantMsg.thought, equals(assistantMsg.thought));
+      },
+    );
+
     test('Agent runs turns, invokes tools, and accumulates history', () async {
       final session = AgentSession();
       final tempDir = await Directory.systemTemp.createTemp('tau_test_');
