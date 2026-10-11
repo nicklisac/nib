@@ -10,6 +10,7 @@ enum KeyAction {
   toggleToolResults,
   modelCycle,
   commandPalette,
+  redraw,
 }
 
 /// A parsed key chord, e.g. `ctrl+r`, `shift+tab`, `alt+enter`, `escape`.
@@ -184,6 +185,7 @@ class KeyBindings {
     KeyAction.toggleToolResults: KeyChord.parse('ctrl+o'),
     KeyAction.modelCycle: KeyChord.parse('ctrl+p'),
     KeyAction.commandPalette: KeyChord.parse('ctrl+k'),
+    KeyAction.redraw: KeyChord.parse('ctrl+l'),
   };
 
   factory KeyBindings.defaults() => KeyBindings(Map.of(defaultBindings));
@@ -222,6 +224,7 @@ class KeyBindings {
     'toggle_tool_results' || 'toggleToolResults' => KeyAction.toggleToolResults,
     'model_cycle' || 'modelCycle' => KeyAction.modelCycle,
     'command_palette' || 'commandPalette' => KeyAction.commandPalette,
+    'redraw' => KeyAction.redraw,
     _ => null,
   };
 

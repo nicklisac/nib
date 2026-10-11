@@ -144,6 +144,9 @@ class PromptReader {
   void Function()? onSessionPicker;
   void Function()? onThinkingCycle;
   void Function()? onModelCycle;
+  void Function()? onRedraw;
+  void Function()? onToggleThinking;
+  void Function()? onToggleToolResults;
 
   static int prevWordBoundary(String text, int index) {
     if (index <= 0) return 0;
@@ -501,6 +504,16 @@ class PromptReader {
               case KeyAction.modelCycle:
                 onModelCycle?.call();
                 _repaint(prompt, buffer, cursor);
+                continue;
+              case KeyAction.redraw:
+                onRedraw?.call();
+                _repaint(prompt, buffer, cursor);
+                continue;
+              case KeyAction.toggleThinking:
+                onToggleThinking?.call();
+                continue;
+              case KeyAction.toggleToolResults:
+                onToggleToolResults?.call();
                 continue;
               default:
                 break;
@@ -913,6 +926,16 @@ class PromptReader {
                   case KeyAction.modelCycle:
                     onModelCycle?.call();
                     _repaint(prompt, buffer, cursor);
+                    break;
+                  case KeyAction.redraw:
+                    onRedraw?.call();
+                    _repaint(prompt, buffer, cursor);
+                    break;
+                  case KeyAction.toggleThinking:
+                    onToggleThinking?.call();
+                    break;
+                  case KeyAction.toggleToolResults:
+                    onToggleToolResults?.call();
                     break;
                   default:
                     break;

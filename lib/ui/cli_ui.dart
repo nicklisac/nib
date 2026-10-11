@@ -6,6 +6,7 @@ import '../agent/agent.dart';
 import '../agent/approval_manager.dart';
 import '../agent/config.dart';
 import '../agent/session.dart';
+import '../ai/chat_message.dart';
 import '../ai/image_attachment.dart';
 import 'ambient_line.dart';
 import 'ansi.dart';
@@ -19,6 +20,7 @@ import 'slash_commands.dart';
 import 'status_bar.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
+import 'transcript_render_model.dart';
 
 /// The upgraded pure terminal CLI UI for Nib.
 ///
@@ -32,6 +34,11 @@ class CliUi {
   final NibConfig? config;
   final SlashCommandHandler _slashHandler;
   final PromptReader _promptReader = PromptReader();
+
+  /// Retained transcript model for full replay and display filters.
+  final TranscriptRenderModel _renderModel = TranscriptRenderModel();
+  bool _thinkingExpanded = true;
+  bool _toolsExpanded = true;
 
   /// The gauge lives on the Agent, which is the layer that knows what a request
   /// costs; the line only displays it.
@@ -55,14 +62,17 @@ class CliUi {
 
   final void Function(String text)? _outSink;
 
-  /// Whether static session facts are pinned in the top header. When they are not
-  /// — a non-TTY run, or a terminal too short to spare the row — the dock prints
-  /// with the prompt instead, so those facts are on screen either way.
-  bool _headerPinned = false;
+  /// Whether static session facts are pinned in the bottom band. When they are
+  /// not — a non-TTY run, or a terminal too short to spare the row — the dock
+  /// prints with the prompt instead, so those facts are on screen either way.
+  bool _bandPinned = false;
 
   CliUi(this.agent, [this.config, void Function(String text)? out])
     : _outSink = out,
       _slashHandler = SlashCommandHandler(agent, config) {
+    _slashHandler.onRedraw = () {
+      redrawScreen();
+    };
     if (config != null && config!.keybindings.isNotEmpty) {
       _promptReader.keyBindings = KeyBindings.fromJson(config!.keybindings);
     }
@@ -75,6 +85,17 @@ class CliUi {
         _ambient.renderDirect();
       }
     };
+    _promptReader.onRedraw = () {
+      redrawScreen();
+    };
+    _promptReader.onToggleThinking = () {
+      _thinkingExpanded = !_thinkingExpanded;
+      redrawScreen();
+    };
+    _promptReader.onToggleToolResults = () {
+      _toolsExpanded = !_toolsExpanded;
+      redrawScreen();
+    };
     _promptReader.onSessionPicker = () async {
       final chosen = await SessionPicker.pickSession(
         currentSession: agent.session,
@@ -83,6 +104,7 @@ class CliUi {
         final loaded = await AgentSession.loadFromDisk(chosen);
         if (loaded != null) {
           agent.session = loaded;
+          populateRenderModelFromSession(loaded);
           final theme = NibTheme.current;
           _writeLine(
             theme.success.text(
@@ -117,8 +139,8 @@ class CliUi {
     StreamSubscription<ProcessSignal>? sigwinchSub;
     Timer? resizeDebounce;
     if (ScreenCoordinator.instance.isSupported) {
-      _headerPinned = ScreenCoordinator.instance.activate(
-        header: StatusBar.headerSegments(agent),
+      _bandPinned = ScreenCoordinator.instance.activate(
+        band: StatusBar.bandSegments(agent),
       );
       try {
         if (!Platform.isWindows) {
@@ -126,7 +148,7 @@ class CliUi {
             resizeDebounce?.cancel();
             resizeDebounce = Timer(const Duration(milliseconds: 50), () {
               ScreenCoordinator.instance.updateTerminalSize();
-              _headerPinned = ScreenCoordinator.instance.headerLines > 0;
+              _bandPinned = ScreenCoordinator.instance.bandLines > 0;
               _ambient.renderDirect();
               _promptReader.repaintCurrentLine();
             });
@@ -150,9 +172,9 @@ class CliUi {
       while (true) {
         final theme = NibTheme.current;
 
-        // Static session facts live in the pinned top header. The dock prints in its
-        // place when there is no header, so the facts are never simply missing.
-        if (!_headerPinned) {
+        // Static session facts live in the pinned bottom band. The dock prints
+        // in its place when there is no band, so the facts are never missing.
+        if (!_bandPinned) {
           _writeLine(StatusBar.render(agent));
         }
 
@@ -198,10 +220,10 @@ class CliUi {
 
         // Check slash commands (/help, /clear, /undo, /theme, etc.)
         if (await _slashHandler.handle(trimmed)) {
-          // /provider, /model, /mock and /theme change what the header says.
+          // /provider, /model, /mock and /theme change what the band says.
           // Repainting after every command is cheaper than tracking which four
-          // of them matter, and a repaint only touches rows the header owns.
-          _refreshHeader();
+          // of them matter, and a repaint only touches rows the band owns.
+          _refreshBand();
           // A skill the human invoked runs as a normal turn, with the skill body
           // already loaded into the prompt.
           final invocation = _slashHandler.pendingInvocation;
@@ -291,18 +313,18 @@ class CliUi {
     }
   }
 
-  /// Re-lays-out and repaints the pinned header from current provider state.
+  /// Re-lays-out and repaints the pinned facts band from current provider state.
   ///
-  /// Header rows are outside the DECSTBM region, so this cannot scroll the
+  /// Band rows are outside the DECSTBM region, so this cannot scroll the
   /// transcript; if the facts no longer fit the same number of rows the scroll
   /// region is re-set, which is the only geometry change it can make.
-  void _refreshHeader() {
+  void _refreshBand() {
     if (!ScreenCoordinator.instance.isActive) return;
-    ScreenCoordinator.instance.setHeader(
-      StatusBar.headerSegments(agent),
+    ScreenCoordinator.instance.setBand(
+      StatusBar.bandSegments(agent),
       width: ScreenCoordinator.instance.terminalColumns,
     );
-    _headerPinned = ScreenCoordinator.instance.headerLines > 0;
+    _bandPinned = ScreenCoordinator.instance.bandLines > 0;
   }
 
   /// Reads one prompt at the human-owned window, restoring any draft the last
@@ -404,7 +426,7 @@ class CliUi {
     }
     _promptReader.addToHistory(queued);
     ScreenCoordinator.instance.setQueued(_promptReader.queuedMessages);
-    if (showDock && !_headerPinned) {
+    if (showDock && !_bandPinned) {
       _writeLine(StatusBar.render(agent));
     }
     renderUserTurn(queued.trim());
@@ -563,9 +585,13 @@ class CliUi {
     _ambient.startTurn();
     _startTurnInput();
 
+    final currentThoughtBuffer = StringBuffer();
+    final currentTextBuffer = StringBuffer();
+
     final callbacks = AgentCallbacks(
       onThoughtDelta: (thought) {
         _ambient.recordToken();
+        currentThoughtBuffer.write(thought);
         if (!_inThoughtBlock) {
           _writeStreamText('  ${theme.muted.text('§ ')}');
           _inThoughtBlock = true;
@@ -573,6 +599,7 @@ class CliUi {
         _writeStreamText(theme.muted.text(thought));
       },
       onTextDelta: (text) {
+        currentTextBuffer.write(text);
         if (_inThoughtBlock) {
           _writeLine('');
           _writeLine('');
@@ -586,6 +613,14 @@ class CliUi {
           _writeLine('');
           _writeLine('');
           _inThoughtBlock = false;
+        }
+        if (currentThoughtBuffer.isNotEmpty) {
+          _renderModel.add(ThoughtBlock(currentThoughtBuffer.toString()));
+          currentThoughtBuffer.clear();
+        }
+        if (currentTextBuffer.isNotEmpty) {
+          _renderModel.add(AssistantTextBlock(currentTextBuffer.toString()));
+          currentTextBuffer.clear();
         }
         final argsSummary = _formatToolArgsSummary(call.name, call.arguments);
         final topUsed = 10 + call.name.length;
@@ -602,6 +637,14 @@ class CliUi {
       },
       onToolCallFinished: (call, result, duration) {
         final ms = duration.inMilliseconds;
+        _renderModel.add(
+          ToolCallBlock(
+            toolName: call.name,
+            arguments: call.arguments,
+            result: result,
+            durationMs: ms,
+          ),
+        );
         final preview = _formatResultPreview(call.name, result);
         for (final line in preview) {
           _writeLine('    $line');
@@ -672,6 +715,15 @@ class CliUi {
       await inputSub?.cancel();
       _ambient.endTurn();
       markdownPrinter.flush();
+      if (currentThoughtBuffer.isNotEmpty) {
+        _renderModel.add(ThoughtBlock(currentThoughtBuffer.toString()));
+        currentThoughtBuffer.clear();
+      }
+      if (currentTextBuffer.isNotEmpty) {
+        _renderModel.add(AssistantTextBlock(currentTextBuffer.toString()));
+        currentTextBuffer.clear();
+      }
+      _renderModel.add(StatusBlock('  ${theme.muted.text('─' * 38)}'));
       _isExecutingTurn = false;
       TerminalManager.instance.clearBuffer();
     }
@@ -685,6 +737,7 @@ class CliUi {
   /// with a 40-column corner cap header and footer, indented text, and no
   /// left vertical borders so resizing reflows naturally.
   void renderUserTurn(String text) {
+    _renderModel.add(UserPromptBlock(text));
     final theme = NibTheme.current;
     _writeLine('');
     _writeLine(
@@ -695,6 +748,67 @@ class CliUi {
     }
     _writeLine('  ${theme.muted.text('╰──${'─' * 35}')}');
     _writeLine('');
+  }
+
+  /// Full screen redraw: clears viewport, re-establishes DECSTBM margins,
+  /// re-renders all retained transcript blocks through current visibility filters,
+  /// and repaints pinned footer and prompt.
+  void redrawScreen() {
+    ScreenCoordinator.instance.resetAndClearScreen();
+
+    final theme = NibTheme.current;
+    final width = ScreenCoordinator.instance.terminalColumns;
+
+    final renderedLines = _renderModel.renderAll(
+      theme: theme,
+      terminalWidth: width,
+      thinkingExpanded: _thinkingExpanded,
+      toolsExpanded: _toolsExpanded,
+    );
+
+    for (final line in renderedLines) {
+      ScreenCoordinator.instance.writeTranscript('$line\n');
+    }
+
+    _ambient.showIdle();
+    _promptReader.repaintCurrentLine();
+  }
+
+  /// Populates the render model from a loaded session transcript.
+  void populateRenderModelFromSession(AgentSession session) {
+    _renderModel.clear();
+    for (final msg in session.messages) {
+      switch (msg.role) {
+        case Role.user:
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            _renderModel.add(UserPromptBlock(msg.content!));
+          }
+        case Role.assistant:
+          if (msg.thought != null && msg.thought!.isNotEmpty) {
+            _renderModel.add(ThoughtBlock(msg.thought!));
+          }
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            _renderModel.add(AssistantTextBlock(msg.content!));
+          }
+          if (msg.toolCalls != null) {
+            for (final call in msg.toolCalls!) {
+              _renderModel.add(
+                ToolCallBlock(
+                  toolName: call.name,
+                  arguments: call.arguments,
+                  result: '(executed in past session)',
+                  durationMs: 0,
+                ),
+              );
+            }
+          }
+        case Role.tool:
+          // Tool results are already associated with tool calls or displayed above
+          break;
+        case Role.system:
+          break;
+      }
+    }
   }
 
   /// Word-wraps text paragraphs to fit within [width] characters.

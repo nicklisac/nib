@@ -36,9 +36,14 @@ class SlashCommandHandler {
   /// construct one directly keep printing to stdout.
   TranscriptWriter get _out => resolveTranscriptWriter(_writer);
   final TranscriptWriter? _writer;
+  void Function()? onRedraw;
 
-  SlashCommandHandler(this.agent, [this.config, TranscriptWriter? writer])
-    : _writer = writer;
+  SlashCommandHandler(
+    this.agent, [
+    this.config,
+    TranscriptWriter? writer,
+    this.onRedraw,
+  ]) : _writer = writer;
 
   /// Writes one transcript line through the coordinator when it owns the
   /// screen, and to stdout when it does not.
@@ -140,6 +145,10 @@ class SlashCommandHandler {
         );
         return true;
 
+      case '/redraw':
+        onRedraw?.call();
+        return true;
+
       case '/exit':
       case '/quit':
       case '/q':
@@ -209,12 +218,18 @@ class SlashCommandHandler {
     _writeln(
       '  ${Ansi.cyanText('/clear')}            Clear conversation history',
     );
+    _writeln(
+      '  ${Ansi.cyanText('/redraw')}           Redraw terminal screen and replay transcript',
+    );
     _writeln('  ${Ansi.cyanText('/exit')}             Exit the CLI');
     _writeln();
     _writeln(Ansi.boldText('Keys'));
     final keys = [
       ('Esc / Ctrl+C', 'stop the turn; your draft is kept'),
       ('Shift+Tab', 'cycle thinking level ladder (off..max)'),
+      ('Ctrl+L', 'full screen redraw with current display filters'),
+      ('Ctrl+T', 'toggle thinking trace visibility'),
+      ('Ctrl+O', 'toggle tool output verbosity (compact/expanded)'),
       ('alt+enter', 'queue what you typed while a turn runs'),
       ('enter', 'on an empty line, send the queued message'),
       ('ctrl+j', 'newline instead of sending'),

@@ -93,6 +93,10 @@ void main() {
         bindings.match(Key.control(ControlCharacter.ctrlK)),
         equals(KeyAction.commandPalette),
       );
+      expect(
+        bindings.match(Key.control(ControlCharacter.ctrlL)),
+        equals(KeyAction.redraw),
+      );
     });
 
     test('overrides bindings from JSON map', () {

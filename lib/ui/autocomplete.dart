@@ -96,6 +96,11 @@ class AutoCompleter {
       '/clear',
     ),
     SlashCommandInfo(
+      '/redraw',
+      'Full terminal redraw: clears screen and re-renders transcript history',
+      '/redraw',
+    ),
+    SlashCommandInfo(
       '/help',
       'Show help documentation and keybindings',
       '/help',
