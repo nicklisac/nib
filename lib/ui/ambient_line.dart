@@ -16,6 +16,7 @@ import 'theme.dart';
 /// can be a casualty of the drop loop: on a narrow window the telemetry is the
 /// point of this row, and it used to lose to a model name.
 enum AmbientField {
+  brand,
   stateGlyph,
   runningTool,
   elapsed,
@@ -54,10 +55,9 @@ class AmbientLine {
     AmbientField.gauge,
   };
 
-  /// Left gutter the row is drawn with, matching the transcript's indent. Counted
-  /// against the width budget: a row that fits only after the indent is added is
-  /// a row that wraps.
-  static const int _indent = 2;
+  /// Left gutter the row is drawn with. Set to 0 so both pinned rows are fully
+  /// left-aligned at column 1.
+  static const int _indent = 0;
 
   /// Compact arrow flight sequence into the inner ring target:
   /// Launch up, glide across, strike, and hold embedded for impact.
@@ -352,6 +352,9 @@ class AmbientLine {
   String render({int width = 80}) {
     final theme = NibTheme.current;
     final fields = <AmbientField, String>{};
+
+    fields[AmbientField.brand] =
+        '${theme.accent.text('✒')}  ${theme.primary.text('Nib')}';
 
     final streaming =
         _state == AmbientState.streaming || _state == AmbientState.tool;

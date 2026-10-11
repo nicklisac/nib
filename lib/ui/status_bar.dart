@@ -46,7 +46,6 @@ class StatusBar {
   static List<String> bandSegments(Agent agent) {
     final theme = NibTheme.current;
     return [
-      '${theme.accent.text('✒')}  ${theme.primary.text('Nib')}',
       theme.accent.text(agent.provider.name),
       theme.secondary.text(agent.provider.model),
       theme.muted.text('⌂ ${p.basename(Directory.current.path)}'),

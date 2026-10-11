@@ -587,6 +587,20 @@ void main() {
         isNot(contains('➸⊚')),
       );
     });
+
+    test(
+      '✒ Nib sits on the top row, far to the left, and is fully left aligned',
+      () {
+        final agent = buildAgent();
+        final line = AmbientLine(agent: agent, meter: agent.meter);
+        final rendered = plain(line.render(width: 100));
+        expect(rendered.startsWith('✒  Nib'), isTrue);
+        expect(
+          StatusBar.bandSegments(agent).map(plain).join(' '),
+          isNot(contains('Nib')),
+        );
+      },
+    );
   });
 
   group('Unified mid-turn drafting and transcript coordination', () {
