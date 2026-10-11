@@ -184,7 +184,7 @@ class SlashCommandHandler {
       '  ${Ansi.cyanText('/compact [focus]')}  Compact older conversation entries into structured checkpoint',
     );
     _writeln(
-      '  ${Ansi.cyanText('/theme [name]')}     Switch TrueColor theme (catppuccin, tokyonight, nord, gruvbox)',
+      '  ${Ansi.cyanText('/theme [name]')}     Switch TrueColor theme (e.g. catppuccin, dracula, rosepine, ...)',
     );
     _writeln(
       '  ${Ansi.cyanText('/confirm')}          Toggle interactive change confirmation mode',

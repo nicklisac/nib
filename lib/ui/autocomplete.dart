@@ -51,7 +51,7 @@ class AutoCompleter {
     ),
     SlashCommandInfo(
       '/theme',
-      'Switch TrueColor theme (catppuccin, tokyonight, nord, gruvbox)',
+      'Switch TrueColor theme (e.g. catppuccin, dracula, rosepine, tokyonight)',
       '/theme [name]',
     ),
     SlashCommandInfo(

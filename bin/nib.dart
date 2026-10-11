@@ -45,7 +45,8 @@ void main(List<String> arguments) async {
     ..addOption(
       'theme',
       abbr: 't',
-      help: 'TrueColor theme (catppuccin, tokyonight, nord, gruvbox).',
+      help:
+          'TrueColor theme (e.g. catppuccin, tokyonight, dracula, rosepine, onedark, ...).',
       defaultsTo: 'catppuccin',
     )
     ..addFlag(
