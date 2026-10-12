@@ -64,6 +64,11 @@ class AutoCompleter {
       'Switch active AI provider profile',
       '/provider [name]',
     ),
+    SlashCommandInfo(
+      '/setup',
+      'Interactively configure an AI provider, model, and API key',
+      '/setup',
+    ),
     SlashCommandInfo('/model', 'Change active model name', '/model [name]'),
     SlashCommandInfo(
       '/tools',

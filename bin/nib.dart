@@ -22,6 +22,7 @@ import 'package:nib/tools/web_search_tool.dart';
 import 'package:nib/tools/write_file_tool.dart';
 import 'package:nib/ui/ansi.dart';
 import 'package:nib/ui/cli_ui.dart';
+import 'package:nib/ui/provider_wizard.dart';
 import 'package:nib/ui/session_picker.dart';
 import 'package:nib/ui/terminal_manager.dart';
 import 'package:nib/ui/theme.dart';
@@ -88,6 +89,11 @@ void main(List<String> arguments) async {
       help: 'Update Nib binary to the latest GitHub release.',
       negatable: false,
     )
+    ..addFlag(
+      'setup',
+      help: 'Interactively configure an AI provider and model.',
+      negatable: false,
+    )
     ..addFlag('help', abbr: 'h', help: 'Show command help.', negatable: false);
 
   ArgResults results;
@@ -117,6 +123,15 @@ void main(List<String> arguments) async {
       stderr.writeln('Update failed: $e');
       exit(1);
     }
+    exit(0);
+  }
+
+  // Handle interactive setup: ./nib --setup or ./nib setup
+  final isSetupCommand =
+      (results['setup'] as bool) ||
+      (results.rest.isNotEmpty && results.rest.first.toLowerCase() == 'setup');
+  if (isSetupCommand) {
+    await ProviderSetupWizard.run();
     exit(0);
   }
 
@@ -231,44 +246,67 @@ void main(List<String> arguments) async {
   };
 
   if (!isMock && !hasKey) {
-    final theme = NibTheme.current;
-    stderr.writeln();
-    stderr.writeln(
-      '  ${theme.accent.text('╭── ✒   Welcome to NIB ──────────────────────────────────────────────')}',
-    );
-    stderr.writeln(
-      '  ${theme.muted.text('│')}   A minimalist terminal coding agent written entirely in Dart.',
-    );
-    stderr.writeln(
-      '  ${theme.accent.text('╰───────────────────────────────────────────────────────────────────')}',
-    );
-    stderr.writeln();
-    stderr.writeln(
-      '  ${theme.warning.text('No AI provider or API key configured.')}',
-    );
-    stderr.writeln();
-    stderr.writeln('  To use Nib, set an API key in your environment:');
-    stderr.writeln(
-      '    ${theme.secondary.text('export ANTHROPIC_API_KEY="sk-ant-..."')}   # Anthropic Claude',
-    );
-    stderr.writeln(
-      '    ${theme.secondary.text('export OPENAI_API_KEY="sk-..."')}          # OpenAI',
-    );
-    stderr.writeln(
-      '    ${theme.secondary.text('export OPENROUTER_API_KEY="sk-or-..."')}   # OpenRouter',
-    );
-    stderr.writeln();
-    stderr.writeln(
-      '  Or configure ~/.nib/config.json with a local server (e.g. Ollama):',
-    );
-    stderr.writeln(
-      '    ${theme.muted.text('./nib --provider ollama --model llama3.1')}',
-    );
-    stderr.writeln();
-    stderr.writeln('  To run in offline demo mode without an API key:');
-    stderr.writeln('    ${theme.success.text('./nib --mock')}');
-    stderr.writeln();
-    exit(1);
+    if (stdin.hasTerminal) {
+      final configured = await ProviderSetupWizard.run(existingConfig: config);
+      if (configured != null) {
+        // Re-resolve provider from updated config
+        final newProvId = configured.defaultProvider.toLowerCase();
+        if (newProvId == 'mock') {
+          provider = MockProvider();
+        } else if (configured.providers.containsKey(newProvId)) {
+          final p = configured.providers[newProvId]!;
+          if (newProvId == 'anthropic') {
+            provider = AnthropicProvider(
+              model: p.model,
+              apiKey: p.apiKey,
+              baseUrl: p.baseUrl.isNotEmpty ? p.baseUrl : null,
+            );
+          } else {
+            provider = OpenAiProvider(
+              name: p.name,
+              model: p.model,
+              apiKey: p.apiKey,
+              baseUrl: p.baseUrl,
+            );
+          }
+        }
+      } else {
+        exit(1);
+      }
+    } else {
+      final theme = NibTheme.current;
+      stderr.writeln();
+      stderr.writeln(
+        '  ${theme.accent.text('╭── ✒   Welcome to NIB ──────────────────────────────────────────────')}',
+      );
+      stderr.writeln(
+        '  ${theme.muted.text('│')}   A minimalist terminal coding agent written entirely in Dart.',
+      );
+      stderr.writeln(
+        '  ${theme.accent.text('╰───────────────────────────────────────────────────────────────────')}',
+      );
+      stderr.writeln();
+      stderr.writeln(
+        '  ${theme.warning.text('No AI provider or API key configured.')}',
+      );
+      stderr.writeln();
+      stderr.writeln('  To use Nib, set an API key in your environment:');
+      stderr.writeln(
+        '    ${theme.secondary.text('export ANTHROPIC_API_KEY="sk-ant-..."')}   # Anthropic Claude',
+      );
+      stderr.writeln(
+        '    ${theme.secondary.text('export OPENAI_API_KEY="sk-..."')}          # OpenAI',
+      );
+      stderr.writeln(
+        '    ${theme.secondary.text('export OPENROUTER_API_KEY="sk-or-..."')}   # OpenRouter',
+      );
+      stderr.writeln();
+      stderr.writeln(
+        '  Or run interactive setup: ${theme.accent.text('nib setup')}',
+      );
+      stderr.writeln();
+      exit(1);
+    }
   }
 
   // Resume or start session

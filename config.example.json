@@ -1,0 +1,49 @@
+{
+  "default_provider": "anthropic",
+  "default_model": "claude-3-7-sonnet-20250219",
+  "providers": {
+    "anthropic": {
+      "name": "Anthropic Claude",
+      "model": "claude-3-7-sonnet-20250219",
+      "base_url": "https://api.anthropic.com",
+      "api_key": "sk-ant-...",
+      "context_window": 200000,
+      "max_tokens": 16384
+    },
+    "openai": {
+      "name": "OpenAI",
+      "model": "gpt-4o",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "sk-...",
+      "context_window": 128000,
+      "max_tokens": 4096
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "model": "anthropic/claude-3.7-sonnet",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "sk-or-...",
+      "context_window": 200000,
+      "max_tokens": 8192
+    },
+    "gemini": {
+      "name": "Google Gemini",
+      "model": "gemini-2.5-flash",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "api_key": "...",
+      "context_window": 1048576,
+      "max_tokens": 8192
+    },
+    "ollama": {
+      "name": "Ollama (Local)",
+      "model": "llama3.1",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "ollama",
+      "context_window": 32768,
+      "max_tokens": 4096
+    }
+  },
+  "max_turns": 0,
+  "max_stuck_iterations": 5,
+  "hard_iteration_cap": 200
+}

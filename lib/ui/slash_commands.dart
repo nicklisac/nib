@@ -8,11 +8,13 @@ import '../agent/session.dart';
 import '../agent/skills.dart';
 import '../agent/thinking_level.dart';
 import '../agent/undo_manager.dart';
+import '../ai/anthropic_provider.dart';
 import '../ai/image_attachment.dart';
 import '../ai/mock_provider.dart';
 import '../ai/openai_provider.dart';
 import 'ansi.dart';
 import 'markdown_renderer.dart';
+import 'provider_wizard.dart';
 import 'session_picker.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
@@ -136,6 +138,10 @@ class SlashCommandHandler {
         _handleProvider(args);
         return true;
 
+      case '/setup':
+        await _handleSetup();
+        return true;
+
       case '/model':
         _handleModel(args);
         return true;
@@ -215,6 +221,9 @@ class SlashCommandHandler {
     );
     _writeln(
       '  ${Ansi.cyanText('/provider [name]')}  Switch between configured providers',
+    );
+    _writeln(
+      '  ${Ansi.cyanText('/setup')}            Interactively configure AI provider, model, and key',
     );
     _writeln(
       '  ${Ansi.cyanText('/model [name]')}     Display or switch the current model',
@@ -660,6 +669,40 @@ class SlashCommandHandler {
       }
     }
     _writeln();
+  }
+
+  Future<void> _handleSetup() async {
+    final updated = await ProviderSetupWizard.run(
+      existingConfig: config,
+      writer: _writer,
+    );
+    if (updated != null) {
+      final pId = updated.defaultProvider.toLowerCase();
+      if (pId == 'mock') {
+        agent.provider = MockProvider();
+      } else if (updated.providers.containsKey(pId)) {
+        final p = updated.providers[pId]!;
+        if (pId == 'anthropic') {
+          agent.provider = AnthropicProvider(
+            model: p.model,
+            apiKey: p.apiKey,
+            baseUrl: p.baseUrl.isNotEmpty ? p.baseUrl : null,
+          );
+        } else {
+          agent.provider = OpenAiProvider(
+            name: p.name,
+            model: p.model,
+            apiKey: p.apiKey,
+            baseUrl: p.baseUrl,
+          );
+        }
+      }
+      _writeln(
+        Ansi.greenText(
+          '  ✔ Switched active provider to "${agent.provider.name}" (${agent.provider.model}).',
+        ),
+      );
+    }
   }
 
   void _handleProvider(List<String> args) {
