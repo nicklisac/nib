@@ -120,6 +120,7 @@ class AutoCompleter {
   /// Finds command metadata matching the prefix or query.
   static List<SlashCommandInfo> completeSlashInfo(String prefix) {
     final clean = prefix.toLowerCase().trim();
+    if (clean.indexOf('/', 1) != -1) return const [];
     if (clean.isEmpty || clean == '/') return commandRegistry;
     return commandRegistry.where((c) {
       return c.command.startsWith(clean) ||

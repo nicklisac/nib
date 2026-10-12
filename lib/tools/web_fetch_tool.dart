@@ -29,36 +29,44 @@ class WebFetchTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final rawUrl = (arguments['url'] as String?)?.trim() ?? '';
     if (rawUrl.isEmpty) {
-      return 'Error: "url" parameter is required.';
+      return const ToolResult.text('Error: "url" parameter is required.');
     }
 
     final uri = Uri.tryParse(rawUrl);
     if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-      return 'Error: Invalid URL "$rawUrl". Must be a valid absolute HTTP or HTTPS URL.';
+      return ToolResult.text(
+        'Error: Invalid URL "$rawUrl". Must be a valid absolute HTTP or HTTPS URL.',
+      );
     }
 
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      return 'Error: Unsupported URL scheme "${uri.scheme}". Only "http" and "https" are allowed.';
+      return ToolResult.text(
+        'Error: Unsupported URL scheme "${uri.scheme}". Only "http" and "https" are allowed.',
+      );
     }
 
     // SSRF / Local address protection
     final host = uri.host.toLowerCase();
     if (_isBlockedHost(host)) {
-      return 'Error: Access to private or local network address "$host" is blocked.';
+      return ToolResult.text(
+        'Error: Access to private or local network address "$host" is blocked.',
+      );
     }
 
     try {
       final addresses = await InternetAddress.lookup(host);
       for (final addr in addresses) {
         if (_isBlockedAddress(addr)) {
-          return 'Error: Resolved address "${addr.address}" for host "$host" is in a blocked private or local range.';
+          return ToolResult.text(
+            'Error: Resolved address "${addr.address}" for host "$host" is in a blocked private or local range.',
+          );
         }
       }
     } catch (e) {
-      return 'Error: Unable to resolve hostname "$host": $e';
+      return ToolResult.text('Error: Unable to resolve hostname "$host": $e');
     }
 
     try {
@@ -75,7 +83,9 @@ class WebFetchTool extends AgentTool {
           .timeout(const Duration(seconds: 25));
 
       if (response.statusCode >= 400) {
-        return 'Error: HTTP ${response.statusCode} (${response.reasonPhrase}) fetching $rawUrl';
+        return ToolResult.text(
+          'Error: HTTP ${response.statusCode} (${response.reasonPhrase}) fetching $rawUrl',
+        );
       }
 
       final contentType = response.headers['content-type']?.toLowerCase() ?? '';
@@ -90,19 +100,23 @@ class WebFetchTool extends AgentTool {
       }
 
       if (content.isEmpty) {
-        return 'Web page at $rawUrl returned no readable content.';
+        return ToolResult.text(
+          'Web page at $rawUrl returned no readable content.',
+        );
       }
 
       const maxOutputChars = 20000;
       if (content.length > maxOutputChars) {
         final total = content.length;
         final truncated = content.substring(0, maxOutputChars);
-        return '$truncated\n\n[Content truncated: showing $maxOutputChars of $total characters]';
+        return ToolResult.text(
+          '$truncated\n\n[Content truncated: showing $maxOutputChars of $total characters]',
+        );
       }
 
-      return content;
+      return ToolResult.text(content);
     } catch (e) {
-      return 'Error fetching $rawUrl: $e';
+      return ToolResult.text('Error fetching $rawUrl: $e');
     }
   }
 

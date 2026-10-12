@@ -107,19 +107,19 @@ Always prefer records and pattern matching where clean.
       expect(tool.name, equals('skill'));
 
       final result = await tool.execute({'name': 'Git Master'});
-      expect(result, contains('conventional commits'));
-      expect(result, contains('# Skill: Git Master'));
+      expect(result.content, contains('conventional commits'));
+      expect(result.content, contains('# Skill: Git Master'));
 
       // Lookup is case-insensitive on the directory-name fallback too.
       final dartResult = await tool.execute({'name': 'DART-PRO'});
-      expect(dartResult, contains('pattern matching'));
+      expect(dartResult.content, contains('pattern matching'));
 
       final missing = await tool.execute({'name': 'nope'});
-      expect(missing, contains('not found'));
-      expect(missing, contains('Git Master'));
+      expect(missing.content, contains('not found'));
+      expect(missing.content, contains('Git Master'));
 
       final empty = await tool.execute({});
-      expect(empty, contains('"name" argument is required'));
+      expect(empty.content, contains('"name" argument is required'));
     });
 
     test('SkillTool refuses disabled skills', () async {
@@ -130,7 +130,7 @@ Always prefer records and pattern matching where clean.
       final result = await SkillTool(
         skillsManager: manager,
       ).execute({'name': 'dart-pro'});
-      expect(result, contains('disabled'));
+      expect(result.content, contains('disabled'));
     });
 
     test('Skill bodies list companion files and how to read them', () async {
@@ -146,11 +146,11 @@ Always prefer records and pattern matching where clean.
       final body = await SkillTool(
         skillsManager: manager,
       ).execute({'name': 'Git Master'});
-      expect(body, contains('COMMIT-FORMAT.md'));
+      expect(body.content, contains('COMMIT-FORMAT.md'));
       // The body must not hand back an absolute path for read_file: global
       // skills live outside the workspace, which read_file cannot reach.
-      expect(body, isNot(contains(skillsDir.path)));
-      expect(body, contains('the `skill` tool'));
+      expect(body.content, isNot(contains(skillsDir.path)));
+      expect(body.content, contains('the `skill` tool'));
     });
 
     test(
@@ -165,7 +165,7 @@ Always prefer records and pattern matching where clean.
         final out = await SkillTool(
           skillsManager: manager,
         ).execute({'name': 'Git Master', 'file': 'COMMIT-FORMAT.md'});
-        expect(out, contains('Conventional commits only.'));
+        expect(out.content, contains('Conventional commits only.'));
       },
     );
 
@@ -181,8 +181,8 @@ Always prefer records and pattern matching where clean.
         'name': 'Git Master',
         'file': '../../../../etc/passwd',
       });
-      expect(out, contains('is not a companion file'));
-      expect(out, isNot(contains('root:')));
+      expect(out.content, contains('is not a companion file'));
+      expect(out.content, isNot(contains('root:')));
     });
 
     test('disable-model-invocation skills stay out of the index', () async {
@@ -291,7 +291,7 @@ Chart the map in three steps.
       final refusal = await SkillTool(
         skillsManager: manager,
       ).execute({'name': 'map-it'});
-      expect(refusal, contains('reserved for direct human invocation'));
+      expect(refusal.content, contains('reserved for direct human invocation'));
 
       // ...but the human can hand it over deliberately.
       final agent = Agent(provider: MockProvider(), session: AgentSession());

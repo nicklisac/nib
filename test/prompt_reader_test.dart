@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:nib/ai/image_attachment.dart';
 import 'package:nib/ui/prompt_reader.dart';
 import 'package:test/test.dart';
 
@@ -64,6 +65,25 @@ void main() {
         equals(19),
       ); // 'foo_bar' end
       expect(PromptReader.nextWordBoundary(text, 19), equals(19));
+    });
+
+    test('tracks and stores attachedImages for the turn', () {
+      final reader = PromptReader();
+      expect(reader.attachedImages, isEmpty);
+
+      const att = ImageAttachment(
+        mimeType: 'image/png',
+        base64Data: 'dummy',
+        width: 100,
+        height: 100,
+        originalPath: 'clipboard',
+      );
+      reader.attachedImages.add(att);
+      expect(reader.attachedImages.length, equals(1));
+      expect(reader.attachedImages.first.originalPath, equals('clipboard'));
+
+      reader.attachedImages.clear();
+      expect(reader.attachedImages, isEmpty);
     });
   });
 }

@@ -9,6 +9,7 @@ import 'context_meter.dart';
 import 'session.dart';
 import 'thinking_level.dart';
 import 'tool.dart';
+import 'velocity_tracker.dart';
 
 /// Callbacks for streaming events to the UI during agent execution.
 class AgentCallbacks {
@@ -78,6 +79,9 @@ class Agent {
         contextWindow ?? CompactionManager.defaultContextWindowTokens,
   );
 
+  /// Tracks LLM generation speed across pure generation bursts.
+  final GenerationVelocityTracker velocityTracker = GenerationVelocityTracker();
+
   Agent({
     required this.provider,
     required this.session,
@@ -106,6 +110,7 @@ class Agent {
   /// Cancels the currently running turn and any active tool processes.
   void cancel() {
     _isCancelled = true;
+    velocityTracker.endBurst();
     _activeStreamSub?.cancel();
     _activeStreamSub = null;
     if (_turnStreamCompleter != null && !_turnStreamCompleter!.isCompleted) {
@@ -157,6 +162,8 @@ class Agent {
       final toolCalls = <ToolCall>[];
       String? lastFinishReason;
 
+      velocityTracker.startBurst();
+
       final stream = provider.streamChat(
         messages: session.messages,
         tools: tools,
@@ -171,16 +178,19 @@ class Agent {
       _activeStreamSub = stream.listen(
         (event) {
           if (_isCancelled) {
+            velocityTracker.endBurst();
             _activeStreamSub?.cancel();
             if (!completer.isCompleted) completer.complete();
             return;
           }
           switch (event) {
             case TextDeltaEvent(:final text):
+              velocityTracker.recordDelta(text);
               textBuffer.write(text);
               callbacks?.onTextDelta?.call(text);
 
             case ThoughtDeltaEvent(:final thought):
+              velocityTracker.recordDelta(thought);
               thoughtBuffer.write(thought);
               callbacks?.onThoughtDelta?.call(thought);
 
@@ -191,12 +201,15 @@ class Agent {
               finishReason: final fr,
               promptTokens: final pt,
               completionTokens: final ct,
+              cachedPromptTokens: final cpt,
             ):
               lastFinishReason = fr;
-              session.recordUsage(pt, ct);
+              velocityTracker.endBurst(actualTokens: ct);
+              session.recordUsage(pt, ct, cachedTokens: cpt);
               meter.recordPromptTokens(pt);
 
             case ErrorEvent(:final message):
+              velocityTracker.endBurst();
               hasError = true;
               callbacks?.onError?.call(message);
           }
@@ -283,17 +296,20 @@ class Agent {
           callbacks?.onToolProgress?.call(call, line);
         };
 
-        String result;
+        ToolResult result;
         final stopwatch = Stopwatch()..start();
 
         if (tool == null) {
-          result =
-              'Error: Unknown tool "${call.name}". Available tools: ${_tools.keys.join(', ')}';
+          result = ToolResult.text(
+            'Error: Unknown tool "${call.name}". Available tools: ${_tools.keys.join(', ')}',
+          );
         } else {
           try {
             result = await tool.execute(call.arguments);
           } catch (e, st) {
-            result = 'Error executing tool "${call.name}": $e\n$st';
+            result = ToolResult.text(
+              'Error executing tool "${call.name}": $e\n$st',
+            );
           }
         }
         stopwatch.stop();
@@ -327,16 +343,21 @@ class Agent {
         }
 
         session.toolExecutionsCount++;
-        callbacks?.onToolCallFinished?.call(call, result, stopwatch.elapsed);
+        callbacks?.onToolCallFinished?.call(
+          call,
+          result.content,
+          stopwatch.elapsed,
+        );
 
         // Add tool result to transcript (safely truncated if oversized)
-        final sanitizedResult = _truncateToolResult(result);
+        final sanitizedResult = _truncateToolResult(result.content);
         resultParts.add(sanitizedResult);
         session.addMessage(
           ChatMessage.toolResult(
             toolCallId: call.id,
             toolName: call.name,
             content: sanitizedResult,
+            images: result.images,
           ),
         );
       }

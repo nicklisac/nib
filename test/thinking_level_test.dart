@@ -118,5 +118,24 @@ void main() {
       expect(handledOff, isTrue);
       expect(agent.thinkingLevel, equals(ThinkingLevel.off));
     });
+
+    test(
+      'SlashCommandHandler does not intercept file paths starting with /',
+      () async {
+        final agent = Agent(provider: MockProvider(), session: AgentSession());
+        final handler = SlashCommandHandler(agent);
+
+        // Absolute paths must not be swallowed as unknown commands
+        final handledPath = await handler.handle(
+          '/home/nick/documents/projects/scream-snake/docs/diagrams/phase1.png',
+        );
+        expect(handledPath, isFalse);
+
+        final handledWithPrompt = await handler.handle(
+          '/home/nick/image.png please inspect this',
+        );
+        expect(handledWithPrompt, isFalse);
+      },
+    );
   });
 }

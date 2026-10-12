@@ -42,10 +42,12 @@ class WebSearchTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final query = (arguments['query'] as String?)?.trim() ?? '';
     if (query.isEmpty) {
-      return 'Error: "query" parameter is required and cannot be empty.';
+      return const ToolResult.text(
+        'Error: "query" parameter is required and cannot be empty.',
+      );
     }
 
     final numResults = (arguments['num_results'] as num?)?.toInt() ?? 5;
@@ -69,9 +71,11 @@ class WebSearchTool extends AgentTool {
         );
 
     if (provider == null) {
-      return 'Error: No web search API key found.\n'
-          'To use web search, set EXA_API_KEY (recommended), TAVILY_API_KEY, or BRAVE_API_KEY in your environment, '
-          'or configure search_provider in ~/.nib/config.json.';
+      return const ToolResult.text(
+        'Error: No web search API key found.\n'
+        'To use web search, set EXA_API_KEY (recommended), TAVILY_API_KEY, or BRAVE_API_KEY in your environment, '
+        'or configure search_provider in ~/.nib/config.json.',
+      );
     }
 
     try {
@@ -83,7 +87,7 @@ class WebSearchTool extends AgentTool {
       );
 
       if (results.isEmpty) {
-        return 'No results found for query: "$query"';
+        return ToolResult.text('No results found for query: "$query"');
       }
 
       final buf = StringBuffer();
@@ -91,9 +95,9 @@ class WebSearchTool extends AgentTool {
       for (var i = 0; i < results.length; i++) {
         buf.write(results[i].toMarkdown(i + 1));
       }
-      return buf.toString().trim();
+      return ToolResult.text(buf.toString().trim());
     } catch (e) {
-      return 'Error during web search: $e';
+      return ToolResult.text('Error during web search: $e');
     }
   }
 }

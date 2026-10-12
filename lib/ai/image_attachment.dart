@@ -19,9 +19,60 @@ class ImageAttachment {
     this.originalPath,
   });
 
+  Map<String, dynamic> toJson() => {
+    'mime_type': mimeType,
+    'base64_data': base64Data,
+    'width': width,
+    'height': height,
+    if (originalPath != null) 'original_path': originalPath,
+  };
+
+  factory ImageAttachment.fromJson(Map<String, dynamic> json) =>
+      ImageAttachment(
+        mimeType: json['mime_type'] as String? ?? 'image/png',
+        base64Data: json['base64_data'] as String? ?? '',
+        width: (json['width'] as num?)?.toInt() ?? 0,
+        height: (json['height'] as num?)?.toInt() ?? 0,
+        originalPath: json['original_path'] as String?,
+      );
+
   /// Sniffs the image format from magic bytes.
   static String? sniffMimeType(List<int> bytes) {
-    if (bytes.length < 12) return null;
+    if (bytes.length < 2) return null;
+
+    // BMP: BM
+    if (bytes[0] == 0x42 && bytes[1] == 0x4D) {
+      return 'image/bmp';
+    }
+
+    if (bytes.length < 4) return null;
+
+    // JPEG: FF D8 FF
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+      return 'image/jpeg';
+    }
+
+    // TIFF: II*. or MM.*
+    if ((bytes[0] == 0x49 &&
+            bytes[1] == 0x49 &&
+            bytes[2] == 0x2A &&
+            bytes[3] == 0x00) ||
+        (bytes[0] == 0x4D &&
+            bytes[1] == 0x4D &&
+            bytes[2] == 0x00 &&
+            bytes[3] == 0x2A)) {
+      return 'image/tiff';
+    }
+
+    // ICO: 00 00 01 00
+    if (bytes[0] == 0x00 &&
+        bytes[1] == 0x00 &&
+        bytes[2] == 0x01 &&
+        bytes[3] == 0x00) {
+      return 'image/x-icon';
+    }
+
+    if (bytes.length < 8) return null;
 
     // PNG: 89 50 4E 47 0D 0A 1A 0A
     if (bytes[0] == 0x89 &&
@@ -35,11 +86,6 @@ class ImageAttachment {
       return 'image/png';
     }
 
-    // JPEG: FF D8 FF
-    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
-      return 'image/jpeg';
-    }
-
     // GIF: GIF87a or GIF89a
     if (bytes[0] == 0x47 &&
         bytes[1] == 0x49 &&
@@ -49,6 +95,8 @@ class ImageAttachment {
         bytes[5] == 0x61) {
       return 'image/gif';
     }
+
+    if (bytes.length < 12) return null;
 
     // WEBP: RIFF....WEBP
     if (bytes[0] == 0x52 &&
@@ -60,11 +108,6 @@ class ImageAttachment {
         bytes[10] == 0x42 &&
         bytes[11] == 0x50) {
       return 'image/webp';
-    }
-
-    // BMP: BM
-    if (bytes[0] == 0x42 && bytes[1] == 0x4D) {
-      return 'image/bmp';
     }
 
     return null;
@@ -161,38 +204,77 @@ class ImageAttachment {
         lower.endsWith('.jpeg') ||
         lower.endsWith('.gif') ||
         lower.endsWith('.webp') ||
-        lower.endsWith('.bmp');
+        lower.endsWith('.bmp') ||
+        lower.endsWith('.tiff') ||
+        lower.endsWith('.tif') ||
+        lower.endsWith('.ico');
   }
 
   /// Attempts to grab an image from system clipboard (Tier 2).
-  /// Supports Linux (wl-paste, xclip) and macOS (pngpaste).
+  /// Supports Linux (wl-paste, xclip), macOS (pngpaste), and Windows (PowerShell).
   static Future<ImageAttachment?> fromClipboard() async {
     try {
       if (Platform.isLinux) {
-        // Try wl-paste
-        try {
-          final res = await Process.run('wl-paste', ['-t', 'image/png']);
-          if (res.exitCode == 0 && res.stdout is List<int>) {
-            final bytes = Uint8List.fromList(res.stdout as List<int>);
-            if (bytes.isNotEmpty) {
-              return await processBytes(bytes, originalPath: 'clipboard');
+        // Try wl-paste with standard image MIME types
+        for (final target in ['image/png', 'image/jpeg', 'image/webp']) {
+          try {
+            final res = await Process.run('wl-paste', [
+              '-t',
+              target,
+            ], stdoutEncoding: null);
+            if (res.exitCode == 0 && res.stdout is List<int>) {
+              final bytes = Uint8List.fromList(res.stdout as List<int>);
+              if (bytes.isNotEmpty) {
+                final att = await processBytes(
+                  bytes,
+                  originalPath: 'clipboard',
+                );
+                if (att != null) return att;
+              }
             }
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
 
         // Try xclip
+        for (final target in ['image/png', 'image/jpeg']) {
+          try {
+            final res = await Process.run('xclip', [
+              '-selection',
+              'clipboard',
+              '-t',
+              target,
+              '-o',
+            ], stdoutEncoding: null);
+            if (res.exitCode == 0 && res.stdout is List<int>) {
+              final bytes = Uint8List.fromList(res.stdout as List<int>);
+              if (bytes.isNotEmpty) {
+                final att = await processBytes(
+                  bytes,
+                  originalPath: 'clipboard',
+                );
+                if (att != null) return att;
+              }
+            }
+          } catch (_) {}
+        }
+        // Try wl-paste text/uri-list (when copying image files in file managers)
         try {
-          final res = await Process.run('xclip', [
-            '-selection',
-            'clipboard',
+          final res = await Process.run('wl-paste', [
             '-t',
-            'image/png',
-            '-o',
-          ]);
-          if (res.exitCode == 0 && res.stdout is List<int>) {
-            final bytes = Uint8List.fromList(res.stdout as List<int>);
-            if (bytes.isNotEmpty) {
-              return await processBytes(bytes, originalPath: 'clipboard');
+            'text/uri-list',
+          ], stdoutEncoding: utf8);
+          if (res.exitCode == 0 && res.stdout is String) {
+            final lines = (res.stdout as String).split(RegExp(r'[\r\n]+'));
+            for (final line in lines) {
+              var uri = line.trim();
+              if (uri.startsWith('file://')) {
+                uri = Uri.decodeFull(uri.substring(7));
+                final f = File(uri);
+                if (isImageFile(uri) && await f.exists()) {
+                  final att = await fromFile(f);
+                  if (att != null) return att;
+                }
+              }
             }
           }
         } catch (_) {}
@@ -210,6 +292,107 @@ class ImageAttachment {
             return att;
           }
         } catch (_) {}
+      } else if (Platform.isWindows) {
+        try {
+          final tmpPath =
+              '${Directory.systemTemp.path}\\nib_clip_${DateTime.now().millisecondsSinceEpoch}.png';
+          final script =
+              'Add-Type -AssemblyName System.Windows.Forms; '
+              '\$img = [System.Windows.Forms.Clipboard]::GetImage(); '
+              'if (\$img) { \$img.Save("$tmpPath", [System.Drawing.Imaging.ImageFormat]::Png) }';
+          final res = await Process.run('powershell', [
+            '-NoProfile',
+            '-Command',
+            script,
+          ]);
+          final f = File(tmpPath);
+          if (res.exitCode == 0 && await f.exists()) {
+            final att = await fromFile(f);
+            try {
+              await f.delete();
+            } catch (_) {}
+            return att;
+          }
+        } catch (_) {}
+      }
+
+      // If no raw image bytes found, check if clipboard text contains an image file path
+      final text = await fromClipboardText();
+      if (text != null && text.isNotEmpty) {
+        var path = text.trim();
+        if (path.startsWith('file://')) {
+          try {
+            path = Uri.decodeFull(path.substring(7));
+          } catch (_) {}
+        }
+        if ((path.startsWith('"') && path.endsWith('"')) ||
+            (path.startsWith("'") && path.endsWith("'"))) {
+          path = path.substring(1, path.length - 1);
+        }
+        if (isImageFile(path)) {
+          final f = File(path);
+          if (await f.exists()) {
+            final att = await fromFile(f);
+            if (att != null) return att;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Attempts to grab plain text from system clipboard.
+  static Future<String?> fromClipboardText() async {
+    try {
+      if (Platform.isLinux) {
+        // Try wl-paste
+        try {
+          final res = await Process.run('wl-paste', [
+            '-t',
+            'text/plain',
+          ], stdoutEncoding: utf8);
+          if (res.exitCode == 0 && res.stdout is String) {
+            final text = res.stdout as String;
+            if (text.isNotEmpty) return text;
+          }
+        } catch (_) {}
+
+        // Try xclip
+        try {
+          final res = await Process.run('xclip', [
+            '-selection',
+            'clipboard',
+            '-o',
+          ], stdoutEncoding: utf8);
+          if (res.exitCode == 0 && res.stdout is String) {
+            final text = res.stdout as String;
+            if (text.isNotEmpty) return text;
+          }
+        } catch (_) {}
+      } else if (Platform.isMacOS) {
+        try {
+          final res = await Process.run(
+            'pbpaste',
+            const [],
+            stdoutEncoding: utf8,
+          );
+          if (res.exitCode == 0 && res.stdout is String) {
+            final text = res.stdout as String;
+            if (text.isNotEmpty) return text;
+          }
+        } catch (_) {}
+      } else if (Platform.isWindows) {
+        try {
+          final res = await Process.run('powershell', [
+            '-NoProfile',
+            '-Command',
+            'Get-Clipboard',
+          ], stdoutEncoding: utf8);
+          if (res.exitCode == 0 && res.stdout is String) {
+            final text = res.stdout as String;
+            if (text.isNotEmpty) return text;
+          }
+        } catch (_) {}
       }
     } catch (_) {}
     return null;
@@ -219,7 +402,7 @@ class ImageAttachment {
   /// Extracts valid images and returns an [ImageExtractionResult].
   static Future<ImageExtractionResult> extractFromPrompt(String prompt) async {
     final pattern = RegExp(
-      r'''(?:@|file://)?([^\s\x1B\(\)\[\]"'`]+\.(?:png|jpg|jpeg|gif|webp|bmp))''',
+      r'''(?:["'](?:file://)?([^"'\r\n\x1B]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff|tif|ico))["']|(?:@|file://)?([^\s\x1B\(\)\[\]"'`]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff|tif|ico)))''',
       caseSensitive: false,
     );
 
@@ -233,11 +416,14 @@ class ImageAttachment {
     var cleaned = prompt;
 
     for (final match in matches) {
-      var rawPath = match.group(1)!;
+      var rawPath = (match.group(1) ?? match.group(2))!;
       // Strip file:// prefix if present
       if (rawPath.startsWith('file://')) {
         rawPath = rawPath.substring(7);
       }
+      try {
+        rawPath = Uri.decodeFull(rawPath);
+      } catch (_) {}
       if (processedPaths.contains(rawPath)) continue;
 
       final file = File(rawPath);

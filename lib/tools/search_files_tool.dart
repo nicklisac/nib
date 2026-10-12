@@ -44,10 +44,10 @@ class SearchFilesTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final query = arguments['query'] as String?;
     if (query == null || query.isEmpty) {
-      return 'Error: Query argument is required';
+      return const ToolResult.text('Error: Query argument is required');
     }
 
     final rawPath = (arguments['path'] as String?)?.trim() ?? '.';
@@ -59,12 +59,14 @@ class SearchFilesTool extends AgentTool {
     );
     if (!p.isWithin(workingDirectory, targetPath) &&
         targetPath != workingDirectory) {
-      return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
+      return ToolResult.text(
+        'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"',
+      );
     }
     final targetDir = Directory(targetPath);
 
     if (!await targetDir.exists()) {
-      return 'Error: Directory not found at "$rawPath"';
+      return ToolResult.text('Error: Directory not found at "$rawPath"');
     }
 
     Pattern pattern;
@@ -75,7 +77,7 @@ class SearchFilesTool extends AgentTool {
                 ? query
                 : RegExp(RegExp.escape(query), caseSensitive: false));
     } catch (e) {
-      return 'Error in regular expression: $e';
+      return ToolResult.text('Error in regular expression: $e');
     }
 
     final results = <String>[];
@@ -136,7 +138,7 @@ class SearchFilesTool extends AgentTool {
     }
 
     if (results.isEmpty) {
-      return 'No matches found for "$query".';
+      return ToolResult.text('No matches found for "$query".');
     }
 
     final buffer = StringBuffer();
@@ -148,6 +150,6 @@ class SearchFilesTool extends AgentTool {
       buffer.writeln('  ...[Truncated after $maxMatches matches]');
     }
 
-    return buffer.toString().trimRight();
+    return ToolResult.text(buffer.toString().trimRight());
   }
 }

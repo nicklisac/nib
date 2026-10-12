@@ -102,10 +102,22 @@ class AnthropicProvider implements LLMProvider {
             'content': contentList,
           });
         } else if (msg.role == Role.tool) {
+          dynamic resultContent = msg.content ?? '';
+          if (msg.images != null && msg.images!.isNotEmpty) {
+            final contentParts = <Map<String, dynamic>>[];
+            if (msg.content != null && msg.content!.isNotEmpty) {
+              contentParts.add({'type': 'text', 'text': msg.content!});
+            }
+            for (final img in msg.images!) {
+              contentParts.add(img.toAnthropicBlock());
+            }
+            resultContent = contentParts;
+          }
+
           final resultBlock = {
             'type': 'tool_result',
             'tool_use_id': msg.toolCallId ?? '',
-            'content': msg.content ?? '',
+            'content': resultContent,
           };
           if (conversationMessages.isNotEmpty &&
               conversationMessages.last['role'] == 'user' &&
@@ -199,6 +211,7 @@ class AnthropicProvider implements LLMProvider {
       String? finishReason;
       int? promptTokens;
       int? completionTokens;
+      int? cachedPromptTokens;
 
       // Track active tool block: id, name, jsonAccumulator
       String? currentToolId;
@@ -231,7 +244,12 @@ class AnthropicProvider implements LLMProvider {
             final message = event['message'] as Map<String, dynamic>?;
             if (message != null && message['usage'] is Map) {
               final usage = message['usage'] as Map<String, dynamic>;
-              promptTokens = usage['input_tokens'] as int?;
+              final rawInput = usage['input_tokens'] as int? ?? 0;
+              final cacheRead = usage['cache_read_input_tokens'] as int? ?? 0;
+              final cacheCreation =
+                  usage['cache_creation_input_tokens'] as int? ?? 0;
+              promptTokens = rawInput + cacheRead + cacheCreation;
+              cachedPromptTokens = cacheRead > 0 ? cacheRead : null;
             }
             break;
 
@@ -301,6 +319,7 @@ class AnthropicProvider implements LLMProvider {
               finishReason: finishReason,
               promptTokens: promptTokens,
               completionTokens: completionTokens,
+              cachedPromptTokens: cachedPromptTokens,
             );
             break;
         }

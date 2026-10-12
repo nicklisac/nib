@@ -63,10 +63,10 @@ class BashTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final command = arguments['command'] as String?;
     if (command == null || command.trim().isEmpty) {
-      return 'Error: No command provided';
+      return const ToolResult.text('Error: No command provided');
     }
 
     final timeoutSeconds =
@@ -74,7 +74,7 @@ class BashTool extends AgentTool {
 
     final approved = await ApprovalManager.instance.confirmBashCommand(command);
     if (!approved) {
-      return 'Command cancelled by user: "$command"';
+      return ToolResult.text('Command cancelled by user: "$command"');
     }
 
     try {
@@ -91,31 +91,35 @@ class BashTool extends AgentTool {
       final outBuffer = StringBuffer();
       final errBuffer = StringBuffer();
 
-      final outSub = process.stdout.transform(utf8.decoder).listen((chunk) {
-        outBuffer.write(chunk);
-        if (onProgress != null) {
-          final lastLine = chunk
-              .trim()
-              .split('\n')
-              .lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
-          if (lastLine.isNotEmpty) {
-            onProgress!(lastLine);
-          }
-        }
-      });
+      final outSub = process.stdout
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .listen((chunk) {
+            outBuffer.write(chunk);
+            if (onProgress != null) {
+              final lastLine = chunk
+                  .trim()
+                  .split('\n')
+                  .lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+              if (lastLine.isNotEmpty) {
+                onProgress!(lastLine);
+              }
+            }
+          });
 
-      final errSub = process.stderr.transform(utf8.decoder).listen((chunk) {
-        errBuffer.write(chunk);
-        if (onProgress != null) {
-          final lastLine = chunk
-              .trim()
-              .split('\n')
-              .lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
-          if (lastLine.isNotEmpty) {
-            onProgress!(lastLine);
-          }
-        }
-      });
+      final errSub = process.stderr
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .listen((chunk) {
+            errBuffer.write(chunk);
+            if (onProgress != null) {
+              final lastLine = chunk
+                  .trim()
+                  .split('\n')
+                  .lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+              if (lastLine.isNotEmpty) {
+                onProgress!(lastLine);
+              }
+            }
+          });
 
       bool timedOut = false;
       final timer = Timer(Duration(seconds: timeoutSeconds), () {
@@ -150,8 +154,10 @@ class BashTool extends AgentTool {
       final err = errBuffer.toString();
 
       if (timedOut) {
-        return '[Command timed out after $timeoutSeconds seconds]\n$out\n$err'
-            .trim();
+        return ToolResult.text(
+          '[Command timed out after $timeoutSeconds seconds]\n$out\n$err'
+              .trim(),
+        );
       }
 
       final buffer = StringBuffer();
@@ -174,13 +180,15 @@ class BashTool extends AgentTool {
       final fullOutput = buffer.toString();
       const maxLen = 30000;
       if (fullOutput.length > maxLen) {
-        return '${fullOutput.substring(0, maxLen)}\n\n...[Output truncated: ${fullOutput.length - maxLen} additional characters omitted]';
+        return ToolResult.text(
+          '${fullOutput.substring(0, maxLen)}\n\n...[Output truncated: ${fullOutput.length - maxLen} additional characters omitted]',
+        );
       }
 
-      return fullOutput;
+      return ToolResult.text(fullOutput);
     } catch (e) {
       _activeProcess = null;
-      return 'Error executing command: $e';
+      return ToolResult.text('Error executing command: $e');
     }
   }
 }

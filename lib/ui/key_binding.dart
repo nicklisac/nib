@@ -11,6 +11,7 @@ enum KeyAction {
   modelCycle,
   commandPalette,
   redraw,
+  paste,
 }
 
 /// A parsed key chord, e.g. `ctrl+r`, `shift+tab`, `alt+enter`, `escape`.
@@ -186,6 +187,7 @@ class KeyBindings {
     KeyAction.modelCycle: KeyChord.parse('ctrl+p'),
     KeyAction.commandPalette: KeyChord.parse('ctrl+k'),
     KeyAction.redraw: KeyChord.parse('ctrl+l'),
+    KeyAction.paste: KeyChord.parse('ctrl+v'),
   };
 
   factory KeyBindings.defaults() => KeyBindings(Map.of(defaultBindings));
@@ -225,6 +227,7 @@ class KeyBindings {
     'model_cycle' || 'modelCycle' => KeyAction.modelCycle,
     'command_palette' || 'commandPalette' => KeyAction.commandPalette,
     'redraw' => KeyAction.redraw,
+    'paste' => KeyAction.paste,
     _ => null,
   };
 

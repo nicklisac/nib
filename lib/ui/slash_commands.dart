@@ -65,6 +65,17 @@ class SlashCommandHandler {
     final cmd = parts[0].toLowerCase();
     final args = parts.sublist(1);
 
+    // Absolute file/directory paths (e.g. '/home/user/image.png' or '/usr/bin')
+    // contain additional slashes or exist on disk. They are input paths, not commands.
+    if (cmd.length < 2 || cmd.indexOf('/', 1) != -1) {
+      return false;
+    }
+    try {
+      if (File(parts[0]).existsSync() || Directory(parts[0]).existsSync()) {
+        return false;
+      }
+    } catch (_) {}
+
     switch (cmd) {
       case '/help':
         _showHelp();
@@ -682,40 +693,58 @@ class SlashCommandHandler {
   void _showHistory() {
     final msgs = agent.session.messages;
     final meter = agent.meter;
-    final spent =
-        agent.session.totalPromptTokens + agent.session.totalCompletionTokens;
+    final session = agent.session;
     _writeln();
     _writeln(Ansi.boldText('Session Transcript Summary:'));
-    _writeln('  Session ID:         ${Ansi.cyanText(agent.session.id)}');
+    _writeln('  Session ID:         ${Ansi.cyanText(session.id)}');
     _writeln('  Total messages:     ${msgs.length}');
-    _writeln('  Tool executions:    ${agent.session.toolExecutionsCount}');
+    _writeln('  Tool executions:    ${session.toolExecutionsCount}');
     _writeln('  Undo history depth: ${UndoManager.instance.count}');
     _writeln();
 
-    // Tokens spent is an after-the-fact billing figure, so it lives here rather
-    // than on the ambient line's gauge (#20).
     _writeln(
-      '  ${Ansi.boldText('Tokens spent:')}       ${Ansi.cyanText(_formatTokens(spent))}',
+      '  ${Ansi.boldText('Session tokens generated:')}  ${Ansi.cyanText('${_formatTokens(session.totalCompletionTokens)} tok')}',
     );
-    _writeln('    prompt:           ${agent.session.totalPromptTokens}');
-    _writeln('    completion:        ${agent.session.totalCompletionTokens}');
+    if (session.cumulativePromptTokens > 0) {
+      final cached = session.cumulativeCachedTokens;
+      final totalIn = session.cumulativePromptTokens;
+      final cacheRate = totalIn > 0
+          ? (cached / totalIn * 100).toStringAsFixed(1)
+          : '0.0';
+      _writeln(
+        '  Cumulative input tokens:  ${Ansi.cyanText(_formatTokens(totalIn))} (cached: ${_formatTokens(cached)}, $cacheRate% cache hit)',
+      );
+    }
     _writeln();
 
     // The raw window numbers the ambient line leaves out, plus the threshold that
     // will trigger compaction. Seeing how far you are from compaction is what
     // keeps the transcript from changing underneath you (#21, doctrine rule 5).
-    final occupied = meter.tokensFor(agent.session);
+    final occupied = meter.tokensFor(session);
     final provenance = meter.isMeasured
         ? Ansi.greenText('measured (provider usage)')
         : Ansi.yellowText('estimated (chars/4)');
-    _writeln(Ansi.boldText('Context gauge:'));
+    _writeln(Ansi.boldText('Context gauge (active prompt occupancy):'));
     _writeln(
-      '  Occupied:           ${Ansi.cyanText('${_formatTokens(occupied)} / ${_formatTokens(meter.contextWindow)}')}  ${Ansi.boldText(meter.displayFor(agent.session))}',
+      '  Occupied:           ${Ansi.cyanText('${_formatTokens(occupied)} / ${_formatTokens(meter.contextWindow)}')}  ${Ansi.boldText(meter.displayFor(session))}',
     );
-    _writeln('  Basis:            $provenance');
+    if (session.cachedPromptTokens > 0) {
+      final cachedPct = occupied > 0
+          ? (session.cachedPromptTokens / occupied * 100).toStringAsFixed(1)
+          : '0.0';
+      _writeln(
+        '  Cached in prompt:   ${Ansi.greenText(_formatTokens(session.cachedPromptTokens))} ($cachedPct% of active prompt)',
+      );
+    }
+    _writeln('  Basis:              $provenance');
     _writeln(
       '  Auto-compact at:    ${Ansi.cyanText(_formatTokens(meter.threshold))} (reserve ${_formatTokens(meter.reserve)})',
     );
+    if (agent.velocityTracker.rollingRate > 0) {
+      _writeln(
+        '  Generation speed:   ${Ansi.cyanText('${agent.velocityTracker.rollingRate.toStringAsFixed(1)} tok/s')} (rolling avg)',
+      );
+    }
     _writeln();
   }
 

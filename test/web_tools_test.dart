@@ -59,27 +59,27 @@ void main() {
       final tool = WebFetchTool();
 
       final localhostRes = await tool.execute({'url': 'http://localhost:5000'});
-      expect(localhostRes, contains('blocked'));
+      expect(localhostRes.content, contains('blocked'));
 
       final loopbackRes = await tool.execute({'url': 'http://127.0.0.1:8080'});
-      expect(loopbackRes, contains('blocked'));
+      expect(loopbackRes.content, contains('blocked'));
 
       final privateIpRes = await tool.execute({
         'url': 'http://192.168.1.100/status',
       });
-      expect(privateIpRes, contains('blocked'));
+      expect(privateIpRes.content, contains('blocked'));
 
       final internalRes = await tool.execute({'url': 'http://app.internal'});
-      expect(internalRes, contains('blocked'));
+      expect(internalRes.content, contains('blocked'));
     });
 
     test('rejects non-http and invalid schemes', () async {
       final tool = WebFetchTool();
       final ftpRes = await tool.execute({'url': 'ftp://ftp.example.com'});
-      expect(ftpRes, contains('Unsupported URL scheme'));
+      expect(ftpRes.content, contains('Unsupported URL scheme'));
 
       final fileRes = await tool.execute({'url': 'file:///etc/passwd'});
-      expect(fileRes, contains('Unsupported URL scheme'));
+      expect(fileRes.content, contains('Unsupported URL scheme'));
     });
 
     test('fetches public page and converts to markdown', () async {
@@ -93,8 +93,8 @@ void main() {
 
       final tool = WebFetchTool(client: mockClient);
       final result = await tool.execute({'url': 'https://example.com'});
-      expect(result, contains('# Hello World'));
-      expect(result, contains('Test paragraph'));
+      expect(result.content, contains('# Hello World'));
+      expect(result.content, contains('Test paragraph'));
     });
   });
 
@@ -145,7 +145,7 @@ void main() {
     test('returns helpful error when no API key is configured', () async {
       final tool = WebSearchTool(env: {});
       final result = await tool.execute({'query': 'test'});
-      expect(result, contains('Error: No web search API key found'));
+      expect(result.content, contains('Error: No web search API key found'));
     });
 
     test('formats search results as markdown', () async {
@@ -172,13 +172,16 @@ void main() {
 
       final result = await tool.execute({'query': 'dart programming'});
       expect(
-        result,
+        result.content,
         contains('# Web Search Results: "dart programming" (Exa)'),
       );
-      expect(result, contains('## 1. Dart Programming Language'));
-      expect(result, contains('**URL:** https://dart.dev'));
-      expect(result, contains('Dart is an approachable, portable language.'));
-      expect(result, contains('## 2. Pub Package Manager'));
+      expect(result.content, contains('## 1. Dart Programming Language'));
+      expect(result.content, contains('**URL:** https://dart.dev'));
+      expect(
+        result.content,
+        contains('Dart is an approachable, portable language.'),
+      );
+      expect(result.content, contains('## 2. Pub Package Manager'));
     });
   });
 }

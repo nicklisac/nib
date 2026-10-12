@@ -91,7 +91,6 @@ class AmbientLine {
   Timer? _timer;
   final Stopwatch _stopwatch = Stopwatch();
   int _frameIndex = 0;
-  int _tokenCount = 0;
   bool _visible = false;
 
   /// Whether the cursor currently sits at the start of a row. The line may only
@@ -134,7 +133,6 @@ class AmbientLine {
     _toolProgress = '';
     _draftKept = false;
     _interruptKey = '';
-    _tokenCount = 0;
     _stopwatch
       ..reset()
       ..start();
@@ -214,9 +212,9 @@ class AmbientLine {
     });
   }
 
-  void recordToken() {
-    _tokenCount++;
-  }
+  /// Kept for backward compatibility with tests. Generation velocity is now
+  /// tracked directly via [agent.velocityTracker].
+  void recordToken() {}
 
   /// Mirrors what the human has composed, so the row can show a queue indicator.
   /// The draft text itself is never echoed here: it is already on the prompt row,
@@ -390,13 +388,11 @@ class AmbientLine {
       );
     }
 
-    if (_state == AmbientState.streaming && _tokenCount > 2) {
-      final seconds = _stopwatch.elapsedMilliseconds / 1000.0;
-      if (seconds > 0.1) {
-        fields[AmbientField.tokenRate] = theme.accent.text(
-          '${(_tokenCount / seconds).toStringAsFixed(1)} tok/s',
-        );
-      }
+    final rate = agent.velocityTracker.currentRate;
+    if (_state == AmbientState.streaming && rate != null && rate > 0) {
+      fields[AmbientField.tokenRate] = theme.accent.text(
+        '${rate.toStringAsFixed(1)} tok/s',
+      );
     }
 
     final hasDraft = TerminalManager.instance.draft.trim().isNotEmpty;
@@ -422,11 +418,10 @@ class AmbientLine {
       fields[AmbientField.undoCount] = theme.warning.text('⤺ $undoCount');
     }
 
-    final spent =
-        agent.session.totalPromptTokens + agent.session.totalCompletionTokens;
-    if (spent > 0) {
+    final generated = agent.session.totalCompletionTokens;
+    if (generated > 0) {
       fields[AmbientField.tokensSpent] = theme.muted.text(
-        '${_formatTokens(spent)} tok',
+        '${_formatTokens(generated)} tok',
       );
     }
 

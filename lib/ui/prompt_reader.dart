@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:dart_console/dart_console.dart';
 import 'package:path/path.dart' as p;
+import '../ai/image_attachment.dart';
 import 'ansi.dart';
 import 'autocomplete.dart';
 import 'key_binding.dart';
@@ -45,7 +46,7 @@ class PromptReader {
   final List<String> _history = [];
   int _historyIndex = -1;
   String _savedDraft = '';
-  late final File _historyFile;
+  File? _historyFile;
 
   final List<String> _queuedMessages = [];
 
@@ -111,9 +112,10 @@ class PromptReader {
         if (!dir.existsSync()) {
           dir.createSync(recursive: true);
         }
-        _historyFile = File(p.join(dir.path, 'history'));
-        if (_historyFile.existsSync()) {
-          final lines = _historyFile.readAsLinesSync();
+        final file = File(p.join(dir.path, 'history'));
+        _historyFile = file;
+        if (file.existsSync()) {
+          final lines = file.readAsLinesSync();
           _history.addAll(lines.where((l) => l.trim().isNotEmpty));
         }
       }
@@ -132,8 +134,11 @@ class PromptReader {
 
     _history.add(trimmed);
     try {
-      if (_historyFile.existsSync()) {
-        _historyFile.writeAsStringSync('$trimmed\n', mode: FileMode.append);
+      if (_historyFile != null) {
+        if (!_historyFile!.existsSync()) {
+          _historyFile!.createSync(recursive: true);
+        }
+        _historyFile!.writeAsStringSync('$trimmed\n', mode: FileMode.append);
       }
     } catch (_) {}
   }
@@ -147,6 +152,10 @@ class PromptReader {
   void Function()? onRedraw;
   void Function()? onToggleThinking;
   void Function()? onToggleToolResults;
+
+  /// Images attached to the currently composing turn.
+  final List<ImageAttachment> attachedImages = [];
+  void Function(ImageAttachment image)? onImageAttached;
 
   static int prevWordBoundary(String text, int index) {
     if (index <= 0) return 0;
@@ -355,6 +364,49 @@ class PromptReader {
       }
     }
 
+    Future<void> handlePasteAction([
+      List<SlashCommandInfo>? currentMatches,
+    ]) async {
+      breakSilence();
+      // Try image from clipboard first
+      final img = await ImageAttachment.fromClipboard();
+      if (img != null) {
+        attachedImages.add(img);
+        onImageAttached?.call(img);
+        _repaint(
+          prompt,
+          buffer,
+          cursor,
+          paletteMatches: currentMatches,
+          paletteIndex: paletteIndex,
+        );
+        return;
+      }
+
+      // Try text from clipboard next
+      final clipText = await ImageAttachment.fromClipboardText();
+      if (clipText != null && clipText.isNotEmpty) {
+        _clearPalette();
+        final text = clipText.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+        buffer = buffer.substring(0, cursor) + text + buffer.substring(cursor);
+        cursor += text.length;
+        _currentBuffer = buffer;
+        _currentCursor = cursor;
+        paletteIndex = 0;
+        final newMatches = buffer.startsWith('/') && !buffer.contains(' ')
+            ? AutoCompleter.completeSlashInfo(buffer)
+            : <SlashCommandInfo>[];
+        _publishDraft(buffer);
+        _repaint(
+          prompt,
+          buffer,
+          cursor,
+          paletteMatches: newMatches,
+          paletteIndex: paletteIndex,
+        );
+      }
+    }
+
     try {
       while (true) {
         final event = await TerminalManager.instance.nextInput();
@@ -497,6 +549,9 @@ class PromptReader {
               case KeyAction.thinkingCycle:
                 onThinkingCycle?.call();
                 _repaint(prompt, buffer, cursor);
+                continue;
+              case KeyAction.paste:
+                await handlePasteAction(paletteMatches);
                 continue;
               case KeyAction.sessionPicker:
                 onSessionPicker?.call();
@@ -912,10 +967,17 @@ class PromptReader {
               }
               break;
 
+            case ControlCharacter.ctrlV:
+              await handlePasteAction(paletteMatches);
+              break;
+
             default:
               final action = keyBindings.match(key);
               if (action != null) {
                 switch (action) {
+                  case KeyAction.paste:
+                    await handlePasteAction(paletteMatches);
+                    break;
                   case KeyAction.thinkingCycle:
                     onThinkingCycle?.call();
                     _repaint(prompt, buffer, cursor);
@@ -1044,6 +1106,9 @@ class PromptReader {
         visibleMatches = paletteMatches.skip(start).take(maxShow).toList();
         extraLines = visibleMatches.length + 4;
       }
+      if (attachedImages.isNotEmpty) {
+        extraLines += attachedImages.length;
+      }
 
       final neededLines = endRow + 1 + extraLines;
       ScreenCoordinator.instance.updatePromptLines(neededLines);
@@ -1057,9 +1122,22 @@ class PromptReader {
           .replaceAll('\n', '\r\n');
       _out('$prompt$formattedBuffer');
 
+      var currentRow = promptStart + endRow + 1;
+      if (attachedImages.isNotEmpty) {
+        final theme = NibTheme.current;
+        for (final img in attachedImages) {
+          final label = img.originalPath ?? 'clipboard';
+          _out('\x1B[$currentRow;1H');
+          _out(
+            '  ${theme.secondary.text("🖼 Attached: $label (${img.width}x${img.height}, ${img.mimeType})")}\r\n',
+          );
+          currentRow++;
+        }
+      }
+
       if (visibleMatches != null && visibleMatches.isNotEmpty) {
         final theme = NibTheme.current;
-        final paletteStartRow = promptStart + endRow + 1;
+        final paletteStartRow = currentRow;
         _out('\x1B[$paletteStartRow;1H');
         _out(
           '  ${theme.muted.text('╭──')} ${theme.accent.text('Commands')} ${theme.muted.text('─' * 20)}\r\n',
@@ -1115,6 +1193,17 @@ class PromptReader {
 
     var extraLines = 0;
 
+    if (attachedImages.isNotEmpty) {
+      final theme = NibTheme.current;
+      for (final img in attachedImages) {
+        final label = img.originalPath ?? 'clipboard';
+        _out(
+          '\n  ${theme.secondary.text("🖼 Attached: $label (${img.width}x${img.height}, ${img.mimeType})")}',
+        );
+        extraLines++;
+      }
+    }
+
     // 5. If command palette is active, render palette directly below prompt line
     if (paletteMatches != null && paletteMatches.isNotEmpty) {
       final theme = NibTheme.current;
@@ -1163,6 +1252,9 @@ class PromptReader {
       _paletteLines = extraLines;
 
       // Move cursor back up to prompt row
+      _out('\x1B[${extraLines}A');
+    } else if (extraLines > 0) {
+      _paletteLines = extraLines;
       _out('\x1B[${extraLines}A');
     } else {
       _paletteLines = 0;

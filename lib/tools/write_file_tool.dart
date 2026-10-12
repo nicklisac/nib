@@ -35,15 +35,15 @@ class WriteFileTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final rawPath = arguments['path'] as String?;
     final content = arguments['content'] as String?;
 
     if (rawPath == null || rawPath.trim().isEmpty) {
-      return 'Error: Path argument is required';
+      return const ToolResult.text('Error: Path argument is required');
     }
     if (content == null) {
-      return 'Error: Content argument is required';
+      return const ToolResult.text('Error: Content argument is required');
     }
 
     final fullPath = p.normalize(
@@ -51,7 +51,9 @@ class WriteFileTool extends AgentTool {
     );
     if (!p.isWithin(workingDirectory, fullPath) &&
         fullPath != workingDirectory) {
-      return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
+      return ToolResult.text(
+        'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"',
+      );
     }
     final file = File(fullPath);
 
@@ -65,7 +67,7 @@ class WriteFileTool extends AgentTool {
         newContent: content,
       );
       if (!approved) {
-        return 'File write rejected by user for "$rawPath".';
+        return ToolResult.text('File write rejected by user for "$rawPath".');
       }
 
       await file.parent.create(recursive: true);
@@ -78,9 +80,11 @@ class WriteFileTool extends AgentTool {
       );
 
       final lineCount = content.split('\n').length;
-      return 'Successfully wrote $lineCount lines to "$rawPath" (${content.length} bytes)';
+      return ToolResult.text(
+        'Successfully wrote $lineCount lines to "$rawPath" (${content.length} bytes)',
+      );
     } catch (e) {
-      return 'Error writing to file "$rawPath": $e';
+      return ToolResult.text('Error writing to file "$rawPath": $e');
     }
   }
 }

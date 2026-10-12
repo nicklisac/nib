@@ -39,7 +39,7 @@ class ListDirTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final rawPath = (arguments['path'] as String?)?.trim() ?? '.';
     final recursive = (arguments['recursive'] as bool?) ?? false;
     final maxDepth = (arguments['max_depth'] as num?)?.toInt() ?? 3;
@@ -49,12 +49,14 @@ class ListDirTool extends AgentTool {
     );
     if (!p.isWithin(workingDirectory, targetPath) &&
         targetPath != workingDirectory) {
-      return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
+      return ToolResult.text(
+        'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"',
+      );
     }
     final dir = Directory(targetPath);
 
     if (!await dir.exists()) {
-      return 'Error: Directory not found at "$rawPath"';
+      return ToolResult.text('Error: Directory not found at "$rawPath"');
     }
 
     try {
@@ -94,9 +96,9 @@ class ListDirTool extends AgentTool {
         }
       }
 
-      return buffer.toString().trimRight();
+      return ToolResult.text(buffer.toString().trimRight());
     } catch (e) {
-      return 'Error listing directory "$rawPath": $e';
+      return ToolResult.text('Error listing directory "$rawPath": $e');
     }
   }
 

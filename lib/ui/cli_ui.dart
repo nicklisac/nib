@@ -200,8 +200,8 @@ class CliUi {
         }
 
         final promptString = ScreenCoordinator.instance.isActive
-            ? '    ${theme.secondary.text('❯')} '
-            : '  ${theme.accent.text('✒')}  ${theme.secondary.text('❯')} ';
+            ? '${theme.secondary.text('❯')} '
+            : '${theme.accent.text('✒')}  ${theme.secondary.text('❯')} ';
         final submitted = await _readTurn(promptString);
 
         // Cannot happen at the idle prompt — nothing closes a window there — but a
@@ -228,15 +228,23 @@ class CliUi {
           continue;
         }
 
-        if (trimmed.isEmpty) {
+        final hasAttachments =
+            _slashHandler.pendingImages.isNotEmpty ||
+            _promptReader.attachedImages.isNotEmpty;
+
+        if (trimmed.isEmpty && !hasAttachments) {
           if (submitted.kind == SubmitKind.flushQueue) {
             await _submitQueued(showDock: false);
           }
           continue;
         }
 
+        final effectiveText = (trimmed.isEmpty && hasAttachments)
+            ? 'Describe this image.'
+            : trimmed;
+
         // Check slash commands (/help, /clear, /undo, /theme, etc.)
-        if (await _slashHandler.handle(trimmed)) {
+        if (await _slashHandler.handle(effectiveText)) {
           // /provider, /model, /mock and /theme change what the band says.
           // Repainting after every command is cheaper than tracking which four
           // of them matter, and a repaint only touches rows the band owns.
@@ -256,18 +264,20 @@ class CliUi {
         }
 
         if (ScreenCoordinator.instance.isActive) {
-          renderUserTurn(trimmed);
+          renderUserTurn(effectiveText);
         }
 
-        // Check for attached images from /image or prompt mentions/paths
+        // Check for attached images from /image or prompt mentions/paths or prompt reader
         final imageExtraction = await ImageAttachment.extractFromPrompt(
-          trimmed,
+          effectiveText,
         );
         final attachments = <ImageAttachment>[
           ..._slashHandler.pendingImages,
+          ..._promptReader.attachedImages,
           ...imageExtraction.images,
         ];
         _slashHandler.pendingImages.clear();
+        _promptReader.attachedImages.clear();
 
         if (attachments.isNotEmpty) {
           final provConf = config?.providers[agent.provider.name];
@@ -459,9 +469,11 @@ class CliUi {
     );
     final attachments = <ImageAttachment>[
       ..._slashHandler.pendingImages,
+      ..._promptReader.attachedImages,
       ...imageExtraction.images,
     ];
     _slashHandler.pendingImages.clear();
+    _promptReader.attachedImages.clear();
 
     final expanded = await AutoCompleter.expandFileMentions(queued.trim());
     await _executeAgentTurn(expanded, images: attachments);
@@ -913,7 +925,7 @@ class CliUi {
   Future<void> _readDraftWindow() async {
     final theme = NibTheme.current;
     final promptString = ScreenCoordinator.instance.isActive
-        ? '    ${theme.secondary.text('⌛︎')} ${theme.accent.text('›')} '
+        ? '${theme.secondary.text('⌛︎')} ${theme.accent.text('›')} '
         : '${theme.secondary.text('⌛︎')} ${theme.accent.text('›')} ';
     // Inside this window Esc / Ctrl+C is the interrupt, and nothing else.
     _promptReader.onInterrupt = (keyName) => _interruptTurn(keyName);

@@ -451,10 +451,10 @@ class _MutatingFileTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final n = onCall();
     final f = File(p.join(root, 'stable.txt'));
     await f.writeAsString('tick $n');
-    return 'tick $n: ${await f.readAsString()}';
+    return ToolResult.text('tick $n: ${await f.readAsString()}');
   }
 }

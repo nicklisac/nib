@@ -132,6 +132,7 @@ class OpenAiProvider implements LLMProvider {
       String? finishReason;
       int? promptTokens;
       int? completionTokens;
+      int? cachedPromptTokens;
 
       // Stream lines from SSE
       final lines = streamedResponse.stream
@@ -165,6 +166,11 @@ class OpenAiProvider implements LLMProvider {
           final usage = parsed['usage'] as Map<String, dynamic>;
           promptTokens = usage['prompt_tokens'] as int?;
           completionTokens = usage['completion_tokens'] as int?;
+          if (usage['prompt_tokens_details'] is Map) {
+            final details =
+                usage['prompt_tokens_details'] as Map<String, dynamic>;
+            cachedPromptTokens = details['cached_tokens'] as int?;
+          }
         }
 
         final choices = parsed['choices'] as List<dynamic>?;
@@ -259,6 +265,7 @@ class OpenAiProvider implements LLMProvider {
         finishReason: finishReason,
         promptTokens: promptTokens,
         completionTokens: completionTokens,
+        cachedPromptTokens: cachedPromptTokens,
       );
     } catch (e) {
       yield ErrorEvent('OpenAI provider error: $e', e);

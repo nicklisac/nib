@@ -41,7 +41,7 @@ class EditFileTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final rawPath = arguments['path'] as String?;
     final targetContent =
         (arguments['target_content'] ??
@@ -55,13 +55,17 @@ class EditFileTool extends AgentTool {
             as String?;
 
     if (rawPath == null || rawPath.trim().isEmpty) {
-      return 'Error: Path argument is required';
+      return const ToolResult.text('Error: Path argument is required');
     }
     if (targetContent == null) {
-      return 'Error: target_content argument is required';
+      return const ToolResult.text(
+        'Error: target_content argument is required',
+      );
     }
     if (replacementContent == null) {
-      return 'Error: replacement_content argument is required';
+      return const ToolResult.text(
+        'Error: replacement_content argument is required',
+      );
     }
 
     final fullPath = p.normalize(
@@ -69,12 +73,14 @@ class EditFileTool extends AgentTool {
     );
     if (!p.isWithin(workingDirectory, fullPath) &&
         fullPath != workingDirectory) {
-      return 'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"';
+      return ToolResult.text(
+        'Error: Path "$rawPath" is outside workspace directory "$workingDirectory"',
+      );
     }
     final file = File(fullPath);
 
     if (!await file.exists()) {
-      return 'Error: File not found at "$rawPath"';
+      return ToolResult.text('Error: File not found at "$rawPath"');
     }
 
     try {
@@ -83,10 +89,14 @@ class EditFileTool extends AgentTool {
       // Count occurrences
       final occurrences = _countOccurrences(text, targetContent);
       if (occurrences == 0) {
-        return 'Error: target_content was not found in "$rawPath". Ensure exact matching including whitespace and indentation.';
+        return ToolResult.text(
+          'Error: target_content was not found in "$rawPath". Ensure exact matching including whitespace and indentation.',
+        );
       }
       if (occurrences > 1) {
-        return 'Error: target_content matched $occurrences times in "$rawPath". Please provide more surrounding context to make the match unique.';
+        return ToolResult.text(
+          'Error: target_content matched $occurrences times in "$rawPath". Please provide more surrounding context to make the match unique.',
+        );
       }
 
       final index = text.indexOf(targetContent);
@@ -102,7 +112,7 @@ class EditFileTool extends AgentTool {
         newContent: replacementContent,
       );
       if (!approved) {
-        return 'Edit rejected by user for "$rawPath".';
+        return ToolResult.text('Edit rejected by user for "$rawPath".');
       }
 
       await file.writeAsString(newText);
@@ -113,9 +123,9 @@ class EditFileTool extends AgentTool {
         contentAfter: newText,
       );
 
-      return 'Successfully updated "$rawPath".';
+      return ToolResult.text('Successfully updated "$rawPath".');
     } catch (e) {
-      return 'Error editing file "$rawPath": $e';
+      return ToolResult.text('Error editing file "$rawPath": $e');
     }
   }
 

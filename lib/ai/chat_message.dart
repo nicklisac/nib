@@ -83,11 +83,13 @@ class ChatMessage {
     required String toolCallId,
     required String toolName,
     required String content,
+    List<ImageAttachment>? images,
   }) => ChatMessage(
     role: Role.tool,
     toolCallId: toolCallId,
     toolName: toolName,
     content: content,
+    images: images,
   );
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +99,8 @@ class ChatMessage {
     'tool_calls': toolCalls?.map((t) => t.toJson()).toList(),
     'tool_call_id': toolCallId,
     'tool_name': toolName,
+    if (images != null && images!.isNotEmpty)
+      'images': images!.map((img) => img.toJson()).toList(),
   };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -114,6 +118,14 @@ class ChatMessage {
           .toList();
     }
 
+    List<ImageAttachment>? images;
+    if (json['images'] is List) {
+      images = (json['images'] as List)
+          .whereType<Map>()
+          .map((m) => ImageAttachment.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+    }
+
     return ChatMessage(
       role: role,
       content: json['content'] as String?,
@@ -121,6 +133,7 @@ class ChatMessage {
       toolCalls: toolCalls,
       toolCallId: json['tool_call_id'] as String?,
       toolName: json['tool_name'] as String?,
+      images: images,
     );
   }
 
@@ -152,6 +165,21 @@ class ChatMessage {
         }
         return map;
       case Role.tool:
+        if (images != null && images!.isNotEmpty) {
+          final parts = <Map<String, dynamic>>[];
+          if (content != null && content!.isNotEmpty) {
+            parts.add({'type': 'text', 'text': content!});
+          }
+          for (final img in images!) {
+            parts.add(img.toOpenAiBlock());
+          }
+          return {
+            'role': 'tool',
+            'tool_call_id': toolCallId ?? '',
+            'name': toolName ?? '',
+            'content': parts,
+          };
+        }
         return {
           'role': 'tool',
           'tool_call_id': toolCallId ?? '',

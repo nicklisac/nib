@@ -26,8 +26,14 @@ class DoneEvent extends StreamEvent {
   final String? finishReason;
   final int? promptTokens;
   final int? completionTokens;
+  final int? cachedPromptTokens;
 
-  DoneEvent({this.finishReason, this.promptTokens, this.completionTokens});
+  DoneEvent({
+    this.finishReason,
+    this.promptTokens,
+    this.completionTokens,
+    this.cachedPromptTokens,
+  });
 }
 
 /// An error occurred during streaming.

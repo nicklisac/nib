@@ -46,42 +46,51 @@ class SkillTool extends AgentTool {
   };
 
   @override
-  Future<String> execute(Map<String, dynamic> arguments) async {
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
     final rawName = (arguments['name'] as String?)?.trim() ?? '';
     if (rawName.isEmpty) {
-      return 'Error: the "name" argument is required.';
+      return const ToolResult.text('Error: the "name" argument is required.');
     }
 
     final skill = _skills.findSkill(rawName);
     if (skill == null) {
       final available = _skills.indexableSkills.map((s) => s.name).toList();
       if (available.isEmpty) {
-        return 'Error: skill "$rawName" not found, and no skills are currently '
-            'active. Skills live in .nib/skills/<name>/SKILL.md (workspace) or '
-            '~/.nib/skills/<name>/SKILL.md.';
+        return ToolResult.text(
+          'Error: skill "$rawName" not found, and no skills are currently '
+          'active. Skills live in .nib/skills/<name>/SKILL.md (workspace) or '
+          '~/.nib/skills/<name>/SKILL.md.',
+        );
       }
-      return 'Error: skill "$rawName" not found. Available skills: '
-          '${available.join(', ')}';
+      return ToolResult.text(
+        'Error: skill "$rawName" not found. Available skills: '
+        '${available.join(', ')}',
+      );
     }
 
     if (!skill.isEnabled) {
-      return 'Error: skill "${skill.name}" is disabled. Re-enable it with '
-          '/skills enable ${skill.name} before loading it.';
+      return ToolResult.text(
+        'Error: skill "${skill.name}" is disabled. Re-enable it with '
+        '/skills enable ${skill.name} before loading it.',
+      );
     }
 
     // A skill marked disable-model-invocation is excluded from the index and
     // must not be served even if the model guesses its name.
     if (skill.disableModelInvocation) {
-      return 'Error: skill "${skill.name}" is reserved for direct human '
-          'invocation and cannot be loaded by the model.';
+      return ToolResult.text(
+        'Error: skill "${skill.name}" is reserved for direct human '
+        'invocation and cannot be loaded by the model.',
+      );
     }
 
     final wantedFile = (arguments['file'] as String?)?.trim();
     if (wantedFile != null && wantedFile.isNotEmpty) {
-      return _readCompanionFile(skill, wantedFile);
+      final companion = await _readCompanionFile(skill, wantedFile);
+      return ToolResult.text(companion);
     }
 
-    return _skills.formatSkillBody(skill);
+    return ToolResult.text(_skills.formatSkillBody(skill));
   }
 
   /// Reads a companion file that belongs to [skill].
