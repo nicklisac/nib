@@ -54,7 +54,19 @@ lib/
 
 ### Installation
 
-**Option A: Clone and run directly**
+**Option A: One-line install (Standalone Binary, zero dependencies)**
+
+No Dart SDK or compiler required:
+```bash
+curl -fsSL https://raw.githubusercontent.com/nicklisac/nib/main/install.sh | bash
+```
+
+To update Nib at any time to the latest release:
+```bash
+nib update
+```
+
+**Option B: Clone and run directly (from source)**
 ```bash
 git clone https://github.com/nicklisac/nib.git
 cd nib
@@ -62,7 +74,7 @@ cd nib
 ```
 `./nib` auto-compiles an optimized kernel snapshot on launch (and rebuilds when any file changes), launching in ~70ms.
 
-**Option B: Global install via Dart**
+**Option C: Global install via Dart**
 ```bash
 dart pub global activate --source git https://github.com/nicklisac/nib.git
 nib

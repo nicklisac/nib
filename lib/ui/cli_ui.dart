@@ -6,6 +6,7 @@ import '../agent/agent.dart';
 import '../agent/approval_manager.dart';
 import '../agent/config.dart';
 import '../agent/session.dart';
+import '../agent/updater.dart';
 import '../ai/image_attachment.dart';
 import 'ambient_line.dart';
 import 'ansi.dart';
@@ -178,12 +179,23 @@ class CliUi {
         populateRenderModelFromSession(agent.session);
         redrawScreen();
       } else {
+        // Check for updates (cached, non-blocking / low timeout)
+        String? updateNotice;
+        try {
+          final info = await NibUpdater.checkForUpdateCached();
+          if (info != null && info.isUpdateAvailable) {
+            updateNotice =
+                'Update available: v${info.latestVersion} (current: v${info.currentVersion}). Run "nib update" to upgrade.';
+          }
+        } catch (_) {}
+
         // Print welcoming Nib banner
         _writeStreamText(
           Ansi.banner(
             model: agent.provider.model,
             provider: agent.provider.name,
             workspace: Directory.current.path,
+            updateNotice: updateNotice,
           ),
         );
       }

@@ -45,6 +45,7 @@ class Ansi {
     required String provider,
     required String workspace,
     DateTime? timestamp,
+    String? updateNotice,
   }) {
     final now = timestamp ?? DateTime.now();
     final stamp =
@@ -71,6 +72,11 @@ class Ansi {
     buf.writeln(
       '    ${dimText('type')} ${boldText('/help')} ${dimText('for slash commands, or ask anything to start.')}',
     );
+    if (updateNotice != null && updateNotice.isNotEmpty) {
+      buf.writeln(
+        '    ${yellowText('⚡')} ${boldText(yellowText(updateNotice))}',
+      );
+    }
     final bottomRule = '╰──${'─' * max(10, ruleLen + headerText.length - 1)}';
     buf.writeln('  ${grayText(bottomRule)}');
     buf.writeln();

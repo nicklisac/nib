@@ -4,6 +4,7 @@ import 'package:nib/agent/agent.dart';
 import 'package:nib/agent/approval_manager.dart';
 import 'package:nib/agent/config.dart';
 import 'package:nib/agent/session.dart';
+import 'package:nib/agent/updater.dart';
 import 'package:nib/agent/skills.dart';
 import 'package:nib/agent/thinking_level.dart';
 import 'package:nib/ai/anthropic_provider.dart';
@@ -76,6 +77,17 @@ void main(List<String> arguments) async {
       help: 'Run in offline demo mode without calling external APIs.',
       negatable: false,
     )
+    ..addFlag(
+      'version',
+      abbr: 'v',
+      help: 'Show version information.',
+      negatable: false,
+    )
+    ..addFlag(
+      'update',
+      help: 'Update Nib binary to the latest GitHub release.',
+      negatable: false,
+    )
     ..addFlag('help', abbr: 'h', help: 'Show command help.', negatable: false);
 
   ArgResults results;
@@ -85,6 +97,27 @@ void main(List<String> arguments) async {
     stderr.writeln('Error parsing arguments: $e');
     stderr.writeln(parser.usage);
     exit(1);
+  }
+
+  // Handle version
+  if (results['version'] as bool) {
+    print('Nib v${NibUpdater.currentVersion}');
+    exit(0);
+  }
+
+  // Handle self-update: ./nib --update or ./nib update
+  final isUpdateCommand =
+      (results['update'] as bool) ||
+      (results.rest.isNotEmpty && results.rest.first.toLowerCase() == 'update');
+  if (isUpdateCommand) {
+    print('Checking for updates...');
+    try {
+      await NibUpdater.performSelfUpdate(onProgress: (msg) => print('  $msg'));
+    } catch (e) {
+      stderr.writeln('Update failed: $e');
+      exit(1);
+    }
+    exit(0);
   }
 
   if (results['help'] as bool) {
