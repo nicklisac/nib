@@ -19,7 +19,7 @@ class UpdateInfo {
 
 /// Manages version checks and standalone binary updates.
 class NibUpdater {
-  static const currentVersion = '0.2.0';
+  static const currentVersion = '0.2.1';
   static const repo = 'nicklisac/nib';
 
   /// Non-blocking check with 12-hour local caching to ensure zero latency at launch.
