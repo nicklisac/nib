@@ -94,6 +94,22 @@ void main(List<String> arguments) async {
       help: 'Interactively configure an AI provider and model.',
       negatable: false,
     )
+    ..addFlag(
+      'uninstall',
+      help: 'Uninstall Nib binary and optionally purge ~/.nib.',
+      negatable: false,
+    )
+    ..addFlag(
+      'purge',
+      help: 'When uninstalling, purge ~/.nib configuration without prompting.',
+      negatable: false,
+    )
+    ..addFlag(
+      'yes',
+      abbr: 'y',
+      help: 'Automatic yes to prompts (for non-interactive uninstall).',
+      negatable: false,
+    )
     ..addFlag('help', abbr: 'h', help: 'Show command help.', negatable: false);
 
   ArgResults results;
@@ -132,6 +148,27 @@ void main(List<String> arguments) async {
       (results.rest.isNotEmpty && results.rest.first.toLowerCase() == 'setup');
   if (isSetupCommand) {
     await ProviderSetupWizard.run();
+    exit(0);
+  }
+
+  // Handle uninstall: ./nib --uninstall or ./nib uninstall
+  final isUninstallCommand =
+      (results['uninstall'] as bool) ||
+      (results.rest.isNotEmpty &&
+          results.rest.first.toLowerCase() == 'uninstall');
+  if (isUninstallCommand) {
+    final purge = results['purge'] as bool;
+    final force = results['yes'] as bool;
+    try {
+      await NibUpdater.performUninstall(
+        purgeData: purge,
+        force: force,
+        onProgress: (msg) => print('  $msg'),
+      );
+    } catch (e) {
+      stderr.writeln('Uninstall failed: $e');
+      exit(1);
+    }
     exit(0);
   }
 

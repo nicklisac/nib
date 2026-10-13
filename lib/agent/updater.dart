@@ -198,6 +198,65 @@ class NibUpdater {
     }
   }
 
+  /// Uninstalls Nib by deleting the executable and optionally purging ~/.nib
+  static Future<bool> performUninstall({
+    bool purgeData = false,
+    bool force = false,
+    void Function(String message)? onProgress,
+  }) async {
+    final exe = File(Platform.resolvedExecutable);
+
+    if (!force) {
+      stdout.write(
+        'Are you sure you want to uninstall Nib (${exe.path})? [y/N]: ',
+      );
+      final confirm = stdin.readLineSync()?.trim().toLowerCase() ?? '';
+      if (confirm != 'y' && confirm != 'yes') {
+        onProgress?.call('Uninstall cancelled.');
+        return false;
+      }
+    }
+
+    // Optional data purge
+    var shouldPurge = purgeData;
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
+    final dotNib = home.isNotEmpty ? Directory(p.join(home, '.nib')) : null;
+
+    if (!force && !purgeData && dotNib != null && dotNib.existsSync()) {
+      stdout.write(
+        'Do you also want to remove ~/.nib configuration and sessions? [y/N]: ',
+      );
+      final purgeConfirm = stdin.readLineSync()?.trim().toLowerCase() ?? '';
+      if (purgeConfirm == 'y' || purgeConfirm == 'yes') {
+        shouldPurge = true;
+      }
+    }
+
+    if (shouldPurge && dotNib != null && dotNib.existsSync()) {
+      try {
+        dotNib.deleteSync(recursive: true);
+        onProgress?.call('✔ Removed ~/.nib directory.');
+      } catch (e) {
+        onProgress?.call('Warning: Could not remove ~/.nib: $e');
+      }
+    }
+
+    try {
+      if (exe.existsSync()) {
+        exe.deleteSync();
+        onProgress?.call('✔ Removed binary at ${exe.path}.');
+      }
+    } catch (e) {
+      throw StateError('Could not delete executable at ${exe.path}: $e');
+    }
+
+    onProgress?.call('✔ Nib has been uninstalled.');
+    return true;
+  }
+
   static String? _detectPlatformArch() {
     String os;
     if (Platform.isLinux) {

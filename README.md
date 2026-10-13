@@ -66,6 +66,11 @@ To update Nib at any time to the latest release:
 nib update
 ```
 
+To cleanly uninstall Nib:
+```bash
+nib uninstall
+```
+
 **Option B: Clone and run directly (from source)**
 ```bash
 git clone https://github.com/nicklisac/nib.git
