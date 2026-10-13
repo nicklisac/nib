@@ -5,74 +5,41 @@ import 'terminal_manager.dart';
 import 'theme.dart';
 import 'transcript_writer.dart';
 
-class ProviderOption {
-  final String id;
+class ProtocolOption {
+  final String id; // 'openai' or 'anthropic'
   final String label;
-  final String defaultModel;
   final String defaultBaseUrl;
-  final String keyHelp;
-  final bool requiresKey;
+  final String defaultModel;
+  final String defaultName;
 
-  const ProviderOption({
+  const ProtocolOption({
     required this.id,
     required this.label,
-    required this.defaultModel,
     required this.defaultBaseUrl,
-    required this.keyHelp,
-    this.requiresKey = true,
+    required this.defaultModel,
+    required this.defaultName,
   });
 }
 
-const List<ProviderOption> knownProviders = [
-  ProviderOption(
-    id: 'anthropic',
-    label: 'Anthropic Claude (Recommended)',
-    defaultModel: 'claude-3-7-sonnet-20250219',
-    defaultBaseUrl: 'https://api.anthropic.com',
-    keyHelp: 'sk-ant-...',
-  ),
-  ProviderOption(
+const List<ProtocolOption> protocols = [
+  ProtocolOption(
     id: 'openai',
-    label: 'OpenAI (GPT-4o)',
-    defaultModel: 'gpt-4o',
+    label: 'OpenAI API Compatible (OpenAI, OpenRouter, Ollama, vLLM, etc.)',
     defaultBaseUrl: 'https://api.openai.com/v1',
-    keyHelp: 'sk-...',
+    defaultModel: 'gpt-4o',
+    defaultName: 'openai',
   ),
-  ProviderOption(
-    id: 'openrouter',
-    label: 'OpenRouter (Multi-provider aggregator)',
-    defaultModel: 'anthropic/claude-3.7-sonnet',
-    defaultBaseUrl: 'https://openrouter.ai/api/v1',
-    keyHelp: 'sk-or-...',
-  ),
-  ProviderOption(
-    id: 'gemini',
-    label: 'Google Gemini',
-    defaultModel: 'gemini-2.5-flash',
-    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    keyHelp: 'AIza...',
-  ),
-  ProviderOption(
-    id: 'ollama',
-    label: 'Ollama (Local, offline)',
-    defaultModel: 'llama3.1',
-    defaultBaseUrl: 'http://localhost:11434/v1',
-    keyHelp: 'none needed (localhost)',
-    requiresKey: false,
-  ),
-  ProviderOption(
-    id: 'mock',
-    label: 'Demo Mode (Mock agent, offline simulation)',
-    defaultModel: 'mock-agent-v1',
-    defaultBaseUrl: '',
-    keyHelp: 'none needed',
-    requiresKey: false,
+  ProtocolOption(
+    id: 'anthropic',
+    label: 'Anthropic (Claude Messages API)',
+    defaultBaseUrl: 'https://api.anthropic.com',
+    defaultModel: 'claude-3-7-sonnet-20250219',
+    defaultName: 'anthropic',
   ),
 ];
 
-/// Interactive provider setup wizard (similar to Pi and Tau).
+/// Interactive provider setup wizard: clean 2-protocol choice, name, and credentials.
 class ProviderSetupWizard {
-  /// Runs the interactive terminal setup wizard and saves chosen config.
   static Future<NibConfig?> run({
     NibConfig? existingConfig,
     TranscriptWriter? writer,
@@ -94,7 +61,7 @@ class ProviderSetupWizard {
       '  ${theme.accent.text('╭── ✒   Nib Provider Setup ──────────────────────────────────────────')}',
     );
     out.writeLine(
-      '  ${theme.muted.text('│')}   Choose your AI model provider to get started.',
+      '  ${theme.muted.text('│')}   Configure your AI model endpoint and credentials.',
     );
     out.writeLine(
       '  ${theme.accent.text('╰───────────────────────────────────────────────────────────────────')}',
@@ -102,9 +69,9 @@ class ProviderSetupWizard {
     out.writeLine('');
 
     var selectedIndex = 0;
-    _renderProviderMenu(selectedIndex, theme, out);
+    _renderProtocolMenu(selectedIndex, theme, out);
 
-    ProviderOption? chosenProvider;
+    ProtocolOption? chosen;
 
     while (true) {
       final key = await TerminalManager.instance.nextKey();
@@ -112,22 +79,21 @@ class ProviderSetupWizard {
         switch (key.controlChar) {
           case ControlCharacter.arrowUp:
             selectedIndex =
-                (selectedIndex - 1 + knownProviders.length) %
-                knownProviders.length;
-            _clearMenu(knownProviders.length, out);
-            _renderProviderMenu(selectedIndex, theme, out);
+                (selectedIndex - 1 + protocols.length) % protocols.length;
+            _clearMenu(protocols.length, out);
+            _renderProtocolMenu(selectedIndex, theme, out);
             break;
           case ControlCharacter.arrowDown:
-            selectedIndex = (selectedIndex + 1) % knownProviders.length;
-            _clearMenu(knownProviders.length, out);
-            _renderProviderMenu(selectedIndex, theme, out);
+            selectedIndex = (selectedIndex + 1) % protocols.length;
+            _clearMenu(protocols.length, out);
+            _renderProtocolMenu(selectedIndex, theme, out);
             break;
           case ControlCharacter.enter:
-            _clearMenu(knownProviders.length, out);
-            chosenProvider = knownProviders[selectedIndex];
+            _clearMenu(protocols.length, out);
+            chosen = protocols[selectedIndex];
             break;
           case ControlCharacter.ctrlC:
-            _clearMenu(knownProviders.length, out);
+            _clearMenu(protocols.length, out);
             out.writeLine(theme.muted.text('  Setup cancelled.'));
             return null;
           default:
@@ -135,143 +101,104 @@ class ProviderSetupWizard {
         }
       } else {
         final char = key.char;
-        if (char == 'q' || char == 'Q' || char == '\x1B') {
-          _clearMenu(knownProviders.length, out);
+        if (char == 'q' || char == 'Q' || key.char == '\x1B') {
+          _clearMenu(protocols.length, out);
           out.writeLine(theme.muted.text('  Setup cancelled.'));
           return null;
         }
         final numVal = int.tryParse(char);
-        if (numVal != null && numVal >= 1 && numVal <= knownProviders.length) {
-          _clearMenu(knownProviders.length, out);
-          chosenProvider = knownProviders[numVal - 1];
+        if (numVal != null && numVal >= 1 && numVal <= protocols.length) {
+          _clearMenu(protocols.length, out);
+          chosen = protocols[numVal - 1];
         }
       }
 
-      if (chosenProvider != null) break;
+      if (chosen != null) break;
     }
 
-    out.writeLine(
-      '  Selected provider: ${theme.accent.text(chosenProvider.label)}',
-    );
+    out.writeLine('  Protocol: ${theme.accent.text(chosen.label)}');
     out.writeLine('');
 
-    if (chosenProvider.id == 'mock') {
-      out.writeLine(theme.success.text('  ✔ Configured offline demo mode.'));
-      out.writeLine('');
-      final config = existingConfig ?? await NibConfig.load();
-      config.defaultProvider = 'mock';
-      await config.save();
-      return config;
-    }
+    // 1. Provider profile name
+    stdout.write('  Provider name [${chosen.defaultName}]: ');
+    final nameInput = stdin.readLineSync()?.trim() ?? '';
+    final providerName = nameInput.isNotEmpty ? nameInput : chosen.defaultName;
 
-    // Prompt for API key if required
-    var apiKey = '';
-    if (chosenProvider.requiresKey) {
-      apiKey = await _readSecretInput(
-        prompt: '  Enter API Key (${chosenProvider.keyHelp}): ',
-        theme: theme,
-        out: out,
-      );
-      if (apiKey.trim().isEmpty) {
-        // Check if environment has it
-        final envVar = switch (chosenProvider.id) {
-          'anthropic' => 'ANTHROPIC_API_KEY',
-          'openai' => 'OPENAI_API_KEY',
-          'openrouter' => 'OPENROUTER_API_KEY',
-          'gemini' => 'GEMINI_API_KEY',
-          _ => null,
-        };
-        final fromEnv = envVar != null ? Platform.environment[envVar] : null;
-        if (fromEnv != null && fromEnv.isNotEmpty) {
-          apiKey = fromEnv;
-          out.writeLine(
-            theme.success.text('  ✔ Using existing $envVar from environment.'),
-          );
-        } else {
-          out.writeLine(
-            theme.warning.text(
-              '  No API key provided. You can set it later or in ~/.nib/config.json.',
-            ),
-          );
-        }
-      }
-    } else {
-      apiKey = chosenProvider.id == 'ollama' ? 'ollama' : '';
-    }
+    // 2. Base URL / Endpoint
+    stdout.write('  Base URL [${chosen.defaultBaseUrl}]: ');
+    final urlInput = stdin.readLineSync()?.trim() ?? '';
+    final baseUrl = urlInput.isNotEmpty ? urlInput : chosen.defaultBaseUrl;
 
-    // Prompt for model with default
-    stdout.write('  Model [${chosenProvider.defaultModel}]: ');
+    // 3. Model name
+    stdout.write('  Model [${chosen.defaultModel}]: ');
     final modelInput = stdin.readLineSync()?.trim() ?? '';
-    final model = modelInput.isNotEmpty
-        ? modelInput
-        : chosenProvider.defaultModel;
+    final model = modelInput.isNotEmpty ? modelInput : chosen.defaultModel;
 
-    // Prompt for custom base URL if Ollama or OpenAI
-    var baseUrl = chosenProvider.defaultBaseUrl;
-    if (chosenProvider.id == 'ollama') {
-      stdout.write('  Endpoint [${chosenProvider.defaultBaseUrl}]: ');
-      final urlInput = stdin.readLineSync()?.trim() ?? '';
-      if (urlInput.isNotEmpty) baseUrl = urlInput;
-    }
+    // 4. API Key (hidden)
+    final apiKey = await _readSecretInput(
+      prompt: '  API Key (leave blank for local models): ',
+      theme: theme,
+      out: out,
+    );
 
     final config = existingConfig ?? await NibConfig.load();
-    config.defaultProvider = chosenProvider.id;
+    config.defaultProvider = providerName;
     config.defaultModel = model;
 
     final provConfig = ProviderConfig(
-      name: chosenProvider.id,
+      name: providerName,
       model: model,
       baseUrl: baseUrl,
       apiKey: apiKey,
+      protocol: chosen.id,
     );
-    config.providers[chosenProvider.id] = provConfig;
+    config.providers[providerName] = provConfig;
 
     await config.save();
 
     out.writeLine('');
     out.writeLine(
-      theme.success.text('  ✔ Saved configuration to ~/.nib/config.json!'),
+      theme.success.text(
+        '  ✔ Saved provider "$providerName" to ~/.nib/config.json!',
+      ),
     );
     out.writeLine(
-      '  Provider: ${theme.accent.text(chosenProvider.id)} | Model: ${theme.accent.text(model)}',
+      '  Active: ${theme.accent.text(providerName)} | Model: ${theme.accent.text(model)} | Endpoint: ${theme.muted.text(baseUrl)}',
     );
     out.writeLine('');
 
     return config;
   }
 
-  static void _renderProviderMenu(
+  static void _renderProtocolMenu(
     int selected,
     NibTheme theme,
     TranscriptWriter out,
   ) {
     out.writeLine(
-      '  ${theme.muted.text('╭──')} ${theme.accent.text('Select Provider')} ${theme.muted.text('─' * 28)}',
+      '  ${theme.muted.text('╭──')} ${theme.accent.text('Select Endpoint Protocol')} ${theme.muted.text('─' * 20)}',
     );
-    for (int i = 0; i < knownProviders.length; i++) {
-      final p = knownProviders[i];
+    for (int i = 0; i < protocols.length; i++) {
+      final p = protocols[i];
       final isSelected = i == selected;
       final pointer = isSelected ? theme.accent.text('▸') : ' ';
       final indexStr = theme.secondary.text('[${i + 1}]');
 
       if (isSelected) {
         out.writeLine(
-          '    $pointer $indexStr ${theme.surface.bg}${theme.accent.text(" ${p.label} ")}\x1B[0m ${theme.muted.text("(${p.defaultModel})")}',
+          '    $pointer $indexStr ${theme.surface.bg}${theme.accent.text(" ${p.label} ")}\x1B[0m',
         );
       } else {
-        out.writeLine(
-          '    $pointer $indexStr ${theme.primary.text(p.label)} ${theme.muted.text("(${p.defaultModel})")}',
-        );
+        out.writeLine('    $pointer $indexStr ${theme.primary.text(p.label)}');
       }
     }
     out.writeLine('  ${theme.muted.text('╰──${'─' * 45}')}');
     out.writeLine(
-      '  ${theme.muted.text('Use ↑/↓ arrows to navigate, Enter to choose, 1-${knownProviders.length} to select, Esc to cancel')}',
+      '  ${theme.muted.text('Use ↑/↓ arrows to navigate, Enter to select, 1-${protocols.length} to choose')}',
     );
   }
 
   static void _clearMenu(int count, TranscriptWriter out) {
-    // 1 top + count rows + 1 bottom + 1 hint = count + 3 lines
     out.rewind(count + 3);
   }
 

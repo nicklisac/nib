@@ -225,12 +225,21 @@ void main(List<String> arguments) async {
     final baseUrl = explicitBaseUrl ?? provConf.baseUrl;
     final apiKey = explicitKey ?? provConf.apiKey;
 
-    provider = OpenAiProvider(
-      name: provConf.name,
-      model: model,
-      apiKey: apiKey,
-      baseUrl: baseUrl,
-    );
+    if (provConf.protocol == 'anthropic' ||
+        provConf.name.toLowerCase().contains('anthropic')) {
+      provider = AnthropicProvider(
+        model: model,
+        apiKey: apiKey,
+        baseUrl: baseUrl.isNotEmpty ? baseUrl : null,
+      );
+    } else {
+      provider = OpenAiProvider(
+        name: provConf.name,
+        model: model,
+        apiKey: apiKey,
+        baseUrl: baseUrl,
+      );
+    }
   } else if (providerId == 'anthropic') {
     final key = explicitKey ?? env['ANTHROPIC_API_KEY'] ?? '';
     provider = AnthropicProvider(

@@ -6,14 +6,11 @@ import 'package:test/test.dart';
 
 void main() {
   group('Provider Wizard and Setup Tests', () {
-    test('knownProviders includes standard providers', () {
-      final ids = knownProviders.map((p) => p.id).toList();
-      expect(ids, contains('anthropic'));
+    test('protocols list contains openai and anthropic', () {
+      final ids = protocols.map((p) => p.id).toList();
       expect(ids, contains('openai'));
-      expect(ids, contains('openrouter'));
-      expect(ids, contains('gemini'));
-      expect(ids, contains('ollama'));
-      expect(ids, contains('mock'));
+      expect(ids, contains('anthropic'));
+      expect(ids.length, equals(2));
     });
 
     test('command registry includes /setup', () {

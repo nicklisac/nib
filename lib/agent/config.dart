@@ -16,6 +16,7 @@ class ProviderConfig {
   final int? maxTurns;
   final int? maxStuckIterations;
   final int? hardIterationCap;
+  final String? protocol; // 'openai' or 'anthropic'
   final String? thinkingLevel;
   final bool? supportsImages;
 
@@ -24,6 +25,7 @@ class ProviderConfig {
     required this.model,
     required this.baseUrl,
     required this.apiKey,
+    this.protocol,
     this.contextWindow,
     this.maxTokens,
     this.maxTurns,
@@ -34,12 +36,23 @@ class ProviderConfig {
   });
 
   factory ProviderConfig.fromJson(String id, Map<String, dynamic> json) {
+    final baseUrl = (json['base_url'] as String? ?? 'https://api.openai.com/v1')
+        .replaceAll(RegExp(r'/+$'), '');
+    final name = json['name'] as String? ?? id;
+    final explicitProto = json['protocol'] as String?;
+    final proto =
+        explicitProto ??
+        (name.toLowerCase().contains('anthropic') ||
+                baseUrl.contains('anthropic.com')
+            ? 'anthropic'
+            : 'openai');
+
     return ProviderConfig(
-      name: json['name'] as String? ?? id,
+      name: name,
       model: json['model'] as String? ?? 'default',
-      baseUrl: (json['base_url'] as String? ?? 'https://api.openai.com/v1')
-          .replaceAll(RegExp(r'/+$'), ''),
+      baseUrl: baseUrl,
       apiKey: json['api_key'] as String? ?? '',
+      protocol: proto,
       contextWindow: (json['context_window'] as num?)?.toInt(),
       maxTokens: (json['max_tokens'] as num?)?.toInt(),
       maxTurns: (json['max_turns'] as num?)?.toInt(),
@@ -55,6 +68,7 @@ class ProviderConfig {
     'model': model,
     'base_url': baseUrl,
     'api_key': apiKey,
+    if (protocol != null) 'protocol': protocol,
     if (contextWindow != null) 'context_window': contextWindow,
     if (maxTokens != null) 'max_tokens': maxTokens,
     if (maxTurns != null) 'max_turns': maxTurns,
