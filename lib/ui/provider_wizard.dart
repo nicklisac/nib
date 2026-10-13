@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dart_console/dart_console.dart';
+import 'package:http/http.dart' as http;
 import '../agent/config.dart';
 import 'terminal_manager.dart';
 import 'theme.dart';
@@ -9,14 +11,12 @@ class ProtocolOption {
   final String id; // 'openai' or 'anthropic'
   final String label;
   final String defaultBaseUrl;
-  final String defaultModel;
   final String defaultName;
 
   const ProtocolOption({
     required this.id,
     required this.label,
     required this.defaultBaseUrl,
-    required this.defaultModel,
     required this.defaultName,
   });
 }
@@ -26,14 +26,12 @@ const List<ProtocolOption> protocols = [
     id: 'openai',
     label: 'OpenAI API Compatible (OpenAI, OpenRouter, Ollama, vLLM, etc.)',
     defaultBaseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o',
     defaultName: 'openai',
   ),
   ProtocolOption(
     id: 'anthropic',
     label: 'Anthropic (Claude Messages API)',
     defaultBaseUrl: 'https://api.anthropic.com',
-    defaultModel: 'claude-3-7-sonnet-20250219',
     defaultName: 'anthropic',
   ),
 ];
@@ -135,15 +133,18 @@ class ProviderSetupWizard {
       defaultValue: chosen.defaultBaseUrl,
     );
 
-    // 3. Model name
-    final model = await _readLineInput(
-      prompt: '  Model [${chosen.defaultModel}]: ',
-      defaultValue: chosen.defaultModel,
-    );
-
-    // 4. API Key (hidden)
+    // 3. API Key (hidden, enter before model so we can query API for models)
     final apiKey = await _readSecretInput(
       prompt: '  API Key (leave blank for local models): ',
+      theme: theme,
+      out: out,
+    );
+
+    // 4. Model selection (query API if possible, else prompt)
+    final model = await _selectOrInputModel(
+      protocol: chosen.id,
+      baseUrl: baseUrl,
+      apiKey: apiKey,
       theme: theme,
       out: out,
     );
@@ -300,5 +301,170 @@ class ProviderSetupWizard {
         }
       }
     }
+  }
+
+  static Future<String> _selectOrInputModel({
+    required String protocol,
+    required String baseUrl,
+    required String apiKey,
+    required NibTheme theme,
+    required TranscriptWriter out,
+  }) async {
+    out.writeLine(
+      theme.muted.text('  Discovering available models from endpoint...'),
+    );
+    final fetched = await _fetchModels(
+      protocol: protocol,
+      baseUrl: baseUrl,
+      apiKey: apiKey,
+    );
+
+    if (fetched.isNotEmpty) {
+      out.writeLine(theme.success.text('  Found ${fetched.length} models:'));
+      out.writeLine('');
+
+      var selectedIndex = 0;
+      _renderModelMenu(fetched, selectedIndex, theme, out);
+
+      while (true) {
+        final event = await TerminalManager.instance.nextInput();
+        if (event is Key) {
+          final key = event;
+          if (key.isControl) {
+            switch (key.controlChar) {
+              case ControlCharacter.arrowUp:
+                selectedIndex =
+                    (selectedIndex - 1 + fetched.length) % fetched.length;
+                _clearModelMenu(fetched.length, out);
+                _renderModelMenu(fetched, selectedIndex, theme, out);
+                break;
+              case ControlCharacter.arrowDown:
+                selectedIndex = (selectedIndex + 1) % fetched.length;
+                _clearModelMenu(fetched.length, out);
+                _renderModelMenu(fetched, selectedIndex, theme, out);
+                break;
+              case ControlCharacter.enter:
+                _clearModelMenu(fetched.length, out);
+                final chosenModel = fetched[selectedIndex];
+                out.writeLine('  Model: ${theme.accent.text(chosenModel)}');
+                return chosenModel;
+              case ControlCharacter.ctrlC:
+              case ControlCharacter.escape:
+                _clearModelMenu(fetched.length, out);
+                break;
+              default:
+                break;
+            }
+          } else {
+            final char = key.char;
+            final numVal = int.tryParse(char);
+            if (numVal != null && numVal >= 1 && numVal <= fetched.length) {
+              _clearModelMenu(fetched.length, out);
+              final chosenModel = fetched[numVal - 1];
+              out.writeLine('  Model: ${theme.accent.text(chosenModel)}');
+              return chosenModel;
+            }
+          }
+        }
+      }
+    } else {
+      out.writeLine(
+        theme.muted.text('(could not auto-fetch models from /models)'),
+      );
+      out.writeLine('');
+      return await _readLineInput(prompt: '  Model name: ', defaultValue: '');
+    }
+  }
+
+  static Future<List<String>> _fetchModels({
+    required String protocol,
+    required String baseUrl,
+    required String apiKey,
+  }) async {
+    try {
+      final cleanBase = baseUrl.endsWith('/')
+          ? baseUrl.substring(0, baseUrl.length - 1)
+          : baseUrl;
+
+      final Uri uri;
+      final Map<String, String> headers = {'Accept': 'application/json'};
+
+      if (protocol == 'openai') {
+        // OpenAI / vLLM / tabbyAPI / Ollama / OpenRouter
+        final modelsUrl = cleanBase.endsWith('/v1')
+            ? '$cleanBase/models'
+            : '$cleanBase/v1/models';
+        uri = Uri.parse(modelsUrl);
+        if (apiKey.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $apiKey';
+        }
+      } else {
+        // Anthropic Messages API
+        uri = Uri.parse('$cleanBase/v1/models');
+        if (apiKey.isNotEmpty) {
+          headers['x-api-key'] = apiKey;
+        }
+        headers['anthropic-version'] = '2023-06-01';
+      }
+
+      final res = await http
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map<String, dynamic> && decoded['data'] is List) {
+          final list = decoded['data'] as List;
+          final modelIds = list
+              .map((item) {
+                if (item is Map<String, dynamic>) {
+                  return item['id'] as String?;
+                }
+                return null;
+              })
+              .whereType<String>()
+              .where((id) => id.isNotEmpty)
+              .toList();
+
+          if (modelIds.isNotEmpty) {
+            return modelIds;
+          }
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static void _renderModelMenu(
+    List<String> models,
+    int selected,
+    NibTheme theme,
+    TranscriptWriter out,
+  ) {
+    out.writeLine(
+      '  ${theme.muted.text('╭──')} ${theme.accent.text('Select Model from Endpoint')} ${theme.muted.text('─' * 20)}',
+    );
+    for (int i = 0; i < models.length; i++) {
+      final m = models[i];
+      final isSelected = i == selected;
+      final pointer = isSelected ? theme.accent.text('▸') : ' ';
+      final indexStr = theme.secondary.text('[${i + 1}]');
+
+      if (isSelected) {
+        out.writeLine(
+          '    $pointer $indexStr ${theme.surface.bg}${theme.accent.text(" $m ")}\x1B[0m',
+        );
+      } else {
+        out.writeLine('    $pointer $indexStr ${theme.primary.text(m)}');
+      }
+    }
+    out.writeLine('  ${theme.muted.text('╰──${'─' * 45}')}');
+    out.writeLine(
+      '  ${theme.muted.text('Use ↑/↓ arrows to navigate, Enter to select, 1-${models.length} to choose')}',
+    );
+  }
+
+  static void _clearModelMenu(int count, TranscriptWriter out) {
+    out.rewind(count + 3);
   }
 }
