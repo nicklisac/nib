@@ -134,12 +134,20 @@ class ProviderSetupWizard {
       prompt: '  Provider name [${chosen.defaultName}]: ',
       defaultValue: chosen.defaultName,
     );
+    if (providerName == null) {
+      out.writeLine(theme.muted.text('  Setup cancelled.'));
+      return null;
+    }
 
     // 2. Base URL / Endpoint
     final baseUrl = await _readLineInput(
       prompt: '  Base URL [${chosen.defaultBaseUrl}]: ',
       defaultValue: chosen.defaultBaseUrl,
     );
+    if (baseUrl == null) {
+      out.writeLine(theme.muted.text('  Setup cancelled.'));
+      return null;
+    }
 
     // 3. API Key (hidden, enter before model so we can query API for models)
     final apiKey = await _readSecretInput(
@@ -147,6 +155,10 @@ class ProviderSetupWizard {
       theme: theme,
       out: out,
     );
+    if (apiKey == null) {
+      out.writeLine(theme.muted.text('  Setup cancelled.'));
+      return null;
+    }
 
     // 4. Model selection (query API if possible, else prompt)
     final modelInfo = await _selectOrInputModel(
@@ -156,6 +168,10 @@ class ProviderSetupWizard {
       theme: theme,
       out: out,
     );
+    if (modelInfo == null) {
+      out.writeLine(theme.muted.text('  Setup cancelled.'));
+      return null;
+    }
     final model = modelInfo.id;
 
     // 5. Optional Advanced Settings (Enter to accept/skip)
@@ -176,6 +192,10 @@ class ProviderSetupWizard {
       prompt: ctxPrompt,
       defaultValue: defaultCtxStr,
     );
+    if (ctxInput == null) {
+      out.writeLine(theme.muted.text('  Setup cancelled.'));
+      return null;
+    }
     final contextWindow = int.tryParse(ctxInput);
 
     final defaultMaxStr = modelInfo.maxTokens != null
@@ -188,12 +208,20 @@ class ProviderSetupWizard {
       prompt: maxTokensPrompt,
       defaultValue: defaultMaxStr,
     );
+    if (maxTokensInput == null) {
+      out.writeLine(theme.muted.text('  Setup cancelled.'));
+      return null;
+    }
     final maxTokens = int.tryParse(maxTokensInput);
 
     final imgInput = await _readLineInput(
       prompt: '  Supports images / vision? (y/N, Enter to skip): ',
       defaultValue: '',
     );
+    if (imgInput == null) {
+      out.writeLine(theme.muted.text('  Setup cancelled.'));
+      return null;
+    }
     final bool? supportsImages = imgInput.toLowerCase().startsWith('y')
         ? true
         : (imgInput.toLowerCase().startsWith('n') ? false : null);
@@ -208,6 +236,10 @@ class ProviderSetupWizard {
       theme: theme,
       out: out,
     );
+    if (selectedSearch != null && selectedSearch.id == '__cancel__') {
+      out.writeLine(theme.muted.text('  Setup cancelled.'));
+      return null;
+    }
     if (selectedSearch != null) {
       config.searchProvider = selectedSearch.id;
       final key = await _readSecretInput(
@@ -215,6 +247,10 @@ class ProviderSetupWizard {
         theme: theme,
         out: out,
       );
+      if (key == null) {
+        out.writeLine(theme.muted.text('  Setup cancelled.'));
+        return null;
+      }
       if (key.isNotEmpty) {
         config.searchApiKey = key;
       }
@@ -291,7 +327,7 @@ class ProviderSetupWizard {
     out.rewind(count + 3);
   }
 
-  static Future<String> _readLineInput({
+  static Future<String?> _readLineInput({
     required String prompt,
     required String defaultValue,
   }) async {
@@ -325,7 +361,7 @@ class ProviderSetupWizard {
           } else if (key.controlChar == ControlCharacter.ctrlC ||
               key.controlChar == ControlCharacter.escape) {
             stdout.writeln();
-            return defaultValue;
+            return null;
           }
         } else {
           final c = key.char;
@@ -338,7 +374,7 @@ class ProviderSetupWizard {
     }
   }
 
-  static Future<String> _readSecretInput({
+  static Future<String?> _readSecretInput({
     required String prompt,
     required NibTheme theme,
     required TranscriptWriter out,
@@ -371,7 +407,7 @@ class ProviderSetupWizard {
           } else if (key.controlChar == ControlCharacter.ctrlC ||
               key.controlChar == ControlCharacter.escape) {
             stdout.writeln();
-            return '';
+            return null;
           }
         } else {
           final c = key.char;
@@ -384,7 +420,7 @@ class ProviderSetupWizard {
     }
   }
 
-  static Future<DiscoveredModel> _selectOrInputModel({
+  static Future<DiscoveredModel?> _selectOrInputModel({
     required String protocol,
     required String baseUrl,
     required String apiKey,
@@ -432,7 +468,7 @@ class ProviderSetupWizard {
               case ControlCharacter.ctrlC:
               case ControlCharacter.escape:
                 _clearModelMenu(fetched.length, out);
-                break;
+                return null;
               default:
                 break;
             }
@@ -457,6 +493,7 @@ class ProviderSetupWizard {
         prompt: '  Model name: ',
         defaultValue: '',
       );
+      if (name == null) return null;
       return DiscoveredModel(id: name);
     }
   }
@@ -626,8 +663,7 @@ class ProviderSetupWizard {
             case ControlCharacter.ctrlC:
             case ControlCharacter.escape:
               _clearSearchMenu(searchOptions.length, out);
-              out.writeLine('  Web Search: ${theme.muted.text('Skipped')}');
-              return null;
+              return (id: '__cancel__', name: '__cancel__');
             default:
               break;
           }
