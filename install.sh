@@ -26,7 +26,11 @@ esac
 
 case "$ARCH" in
   x86_64|amd64)
-    ARCH_NAME="x64"
+    if [ "$PLATFORM" = "macos" ]; then
+      ARCH_NAME="arm64" # Apple Silicon standard
+    else
+      ARCH_NAME="x64"
+    fi
     ;;
   arm64|aarch64)
     ARCH_NAME="arm64"

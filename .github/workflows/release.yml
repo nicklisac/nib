@@ -28,9 +28,6 @@ jobs:
           - os: macos-latest
             target: macos-arm64
             binary_name: nib
-          - os: macos-13
-            target: macos-x64
-            binary_name: nib
           - os: windows-latest
             target: windows-x64
             binary_name: nib.exe

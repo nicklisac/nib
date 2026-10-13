@@ -270,13 +270,15 @@ class NibUpdater {
     }
 
     String arch;
-    final pVer = Platform.version.toLowerCase();
-    if (pVer.contains('arm64') || pVer.contains('aarch64')) {
+    if (Platform.isMacOS) {
       arch = 'arm64';
-    } else if (pVer.contains('x64') || pVer.contains('x86_64')) {
-      arch = 'x64';
     } else {
-      arch = 'x64'; // Fallback
+      final pVer = Platform.version.toLowerCase();
+      if (pVer.contains('arm64') || pVer.contains('aarch64')) {
+        arch = 'arm64';
+      } else {
+        arch = 'x64';
+      }
     }
 
     return '$os-$arch';
