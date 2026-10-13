@@ -202,6 +202,28 @@ class ProviderSetupWizard {
     config.defaultProvider = providerName;
     config.defaultModel = model;
 
+    // 6. Optional Web Search Provider Setup (Enter to skip)
+    out.writeLine('');
+    final currentSearch = config.searchProvider;
+    final searchHint = currentSearch != null ? ' [$currentSearch]' : '';
+    out.writeLine(
+      theme.muted.text(
+        '  Web Search Provider (Optional: exa, tavily, brave, or Enter to skip):',
+      ),
+    );
+    out.writeLine(
+      theme.muted.text(
+        '  (Hint: If skipped, Nib can help you set up or configure search anytime)',
+      ),
+    );
+    final searchInput = await _readLineInput(
+      prompt: '  Search provider$searchHint: ',
+      defaultValue: currentSearch ?? '',
+    );
+    if (searchInput.isNotEmpty) {
+      config.searchProvider = searchInput.toLowerCase();
+    }
+
     final provConfig = ProviderConfig(
       name: providerName,
       model: model,
@@ -216,8 +238,8 @@ class ProviderSetupWizard {
 
     await config.save();
 
-    stdout.writeln();
-    stdout.writeln(
+    out.writeLine('');
+    out.writeLine(
       theme.success.text(
         '  ✔ Saved provider "$providerName" to ~/.nib/config.json!',
       ),
@@ -230,11 +252,13 @@ class ProviderSetupWizard {
       if (maxTokens != null) 'MaxTokens: ${theme.secondary.text('$maxTokens')}',
       if (supportsImages != null)
         'Images: ${theme.secondary.text(supportsImages ? "yes" : "no")}',
+      if (config.searchProvider != null)
+        'Search: ${theme.secondary.text(config.searchProvider!)}',
     ].join(' | ');
 
-    stdout.writeln('  $details');
-    stdout.writeln('  Endpoint: ${theme.muted.text(baseUrl)}');
-    stdout.writeln();
+    out.writeLine('  $details');
+    out.writeLine('  Endpoint: ${theme.muted.text(baseUrl)}');
+    out.writeLine('');
 
     return config;
   }

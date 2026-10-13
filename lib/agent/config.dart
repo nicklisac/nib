@@ -100,7 +100,7 @@ class NibConfig {
   final int maxStuckIterations;
   final int hardIterationCap;
   final Map<String, dynamic> keybindings;
-  final String? searchProvider;
+  String? searchProvider;
   final String? thinkingLevel;
 
   NibConfig({
