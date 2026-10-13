@@ -217,29 +217,40 @@ class ProviderSetupWizard {
     final buffer = StringBuffer();
 
     while (true) {
-      final key = await TerminalManager.instance.nextKey();
-      if (key.isControl) {
-        if (key.controlChar == ControlCharacter.enter) {
-          stdout.writeln();
-          final val = buffer.toString().trim();
-          return val.isNotEmpty ? val : defaultValue;
-        } else if (key.controlChar == ControlCharacter.backspace) {
-          if (buffer.isNotEmpty) {
-            final s = buffer.toString();
-            buffer.clear();
-            buffer.write(s.substring(0, s.length - 1));
-            stdout.write('\b \b');
+      final event = await TerminalManager.instance.nextInput();
+      if (event is PasteBlob) {
+        // Handle bracketed paste directly
+        final pasted = event.text
+            .replaceAll('\r\n', '')
+            .replaceAll('\n', '')
+            .replaceAll('\r', '');
+        buffer.write(pasted);
+        stdout.write(pasted);
+      } else if (event is Key) {
+        final key = event;
+        if (key.isControl) {
+          if (key.controlChar == ControlCharacter.enter) {
+            stdout.writeln();
+            final val = buffer.toString().trim();
+            return val.isNotEmpty ? val : defaultValue;
+          } else if (key.controlChar == ControlCharacter.backspace) {
+            if (buffer.isNotEmpty) {
+              final s = buffer.toString();
+              buffer.clear();
+              buffer.write(s.substring(0, s.length - 1));
+              stdout.write('\b \b');
+            }
+          } else if (key.controlChar == ControlCharacter.ctrlC ||
+              key.controlChar == ControlCharacter.escape) {
+            stdout.writeln();
+            return defaultValue;
           }
-        } else if (key.controlChar == ControlCharacter.ctrlC ||
-            key.controlChar == ControlCharacter.escape) {
-          stdout.writeln();
-          return defaultValue;
-        }
-      } else {
-        final c = key.char;
-        if (c.isNotEmpty && c.codeUnitAt(0) >= 32) {
-          buffer.write(c);
-          stdout.write(c);
+        } else {
+          final c = key.char;
+          if (c.isNotEmpty && c.codeUnitAt(0) >= 32) {
+            buffer.write(c);
+            stdout.write(c);
+          }
         }
       }
     }
@@ -254,28 +265,38 @@ class ProviderSetupWizard {
     final buffer = StringBuffer();
 
     while (true) {
-      final key = await TerminalManager.instance.nextKey();
-      if (key.isControl) {
-        if (key.controlChar == ControlCharacter.enter) {
-          stdout.writeln();
-          return buffer.toString().trim();
-        } else if (key.controlChar == ControlCharacter.backspace) {
-          if (buffer.isNotEmpty) {
-            final s = buffer.toString();
-            buffer.clear();
-            buffer.write(s.substring(0, s.length - 1));
-            stdout.write('\b \b');
+      final event = await TerminalManager.instance.nextInput();
+      if (event is PasteBlob) {
+        final pasted = event.text
+            .replaceAll('\r\n', '')
+            .replaceAll('\n', '')
+            .replaceAll('\r', '');
+        buffer.write(pasted);
+        stdout.write('*' * pasted.length);
+      } else if (event is Key) {
+        final key = event;
+        if (key.isControl) {
+          if (key.controlChar == ControlCharacter.enter) {
+            stdout.writeln();
+            return buffer.toString().trim();
+          } else if (key.controlChar == ControlCharacter.backspace) {
+            if (buffer.isNotEmpty) {
+              final s = buffer.toString();
+              buffer.clear();
+              buffer.write(s.substring(0, s.length - 1));
+              stdout.write('\b \b');
+            }
+          } else if (key.controlChar == ControlCharacter.ctrlC ||
+              key.controlChar == ControlCharacter.escape) {
+            stdout.writeln();
+            return '';
           }
-        } else if (key.controlChar == ControlCharacter.ctrlC ||
-            key.controlChar == ControlCharacter.escape) {
-          stdout.writeln();
-          return '';
-        }
-      } else {
-        final c = key.char;
-        if (c.isNotEmpty && c.codeUnitAt(0) >= 32) {
-          buffer.write(c);
-          stdout.write('*');
+        } else {
+          final c = key.char;
+          if (c.isNotEmpty && c.codeUnitAt(0) >= 32) {
+            buffer.write(c);
+            stdout.write('*');
+          }
         }
       }
     }
