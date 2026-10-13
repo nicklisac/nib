@@ -281,11 +281,15 @@ void main(List<String> arguments) async {
     );
   }
 
-  // Check whether a usable provider or credentials exist
+  // Check whether a usable provider or credentials exist. A saved profile with
+  // its own base URL is the human's explicit choice of endpoint, so it counts even
+  // with a blank key (a self-hosted server on a LAN or Tailscale address needs none).
+  final savedBaseUrl = config.findProvider(providerId)?.baseUrl ?? '';
   final hasKey = switch (provider) {
     AnthropicProvider a => a.apiKey.isNotEmpty,
     OpenAiProvider o =>
       o.apiKey.isNotEmpty ||
+          savedBaseUrl.isNotEmpty ||
           (o.baseUrl.contains('localhost') || o.baseUrl.contains('127.0.0.1')),
     MockProvider _ => true,
     _ => false,
