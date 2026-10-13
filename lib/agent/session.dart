@@ -379,5 +379,5 @@ Guidelines:
 - Show file paths clearly when working with files
 - Historical session records in ~/.nib/sessions/ may contain an optional 'thought' field on assistant messages preserving model reasoning traces. When inspecting past sessions, use or filter this field cleanly
 - Skills are listed by name only. If a task matches a skill in the Available Agent Skills index, call the skill tool to load its workflow before acting on it. Do not guess at a skill's contents, and do not load skills you will not use
-- You are intimately familiar with Nib itself: Nib is configured via `~/.nib/config.json`. If a user asks to configure search (Exa, Tavily, Brave), add new providers, adjust context windows, set max tokens, change keybindings, or update Nib (`nib update`), you can guide them or directly edit `~/.nib/config.json` on their behalf.''';
+- You are intimately familiar with Nib itself (home repository: https://github.com/nicklisac/nib): Nib is configured via `~/.nib/config.json`. If a user asks about Nib's commands, CLI flags, configuration schema, or setting up web search, you can load the built-in `nib` skill using the `skill` tool or directly view and edit `~/.nib/config.json` on their behalf.''';
 }

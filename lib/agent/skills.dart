@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
+import 'builtin_skills.dart';
 
 /// Represents a modular agent capability or skill loaded from a SKILL.md definition.
 class Skill {
@@ -74,6 +75,11 @@ class SkillsManager {
         Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
         '';
+
+    if (home.isNotEmpty) {
+      await _ensureBuiltInSkills(home);
+    }
+
     final seen = <String>{};
 
     final candidates = <({String dir, bool isWorkspace})>[
@@ -192,6 +198,23 @@ class SkillsManager {
       return assets;
     } catch (_) {
       return const [];
+    }
+  }
+
+  /// Ensures built-in skills bundled with Nib are installed to `~/.nib/skills/<name>/SKILL.md`.
+  Future<void> _ensureBuiltInSkills(String home) async {
+    try {
+      final baseDir = Directory(p.join(home, '.nib', 'skills'));
+      for (final entry in BuiltInSkills.skills.entries) {
+        final skillDir = Directory(p.join(baseDir.path, entry.key));
+        final skillFile = File(p.join(skillDir.path, 'SKILL.md'));
+        if (!await skillFile.exists()) {
+          await skillDir.create(recursive: true);
+          await skillFile.writeAsString(entry.value);
+        }
+      }
+    } catch (_) {
+      // Non-critical: failure to provision must not crash startup.
     }
   }
 

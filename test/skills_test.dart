@@ -386,5 +386,21 @@ Chart the map in three steps.
         expect(after, contains('dart-pro'));
       },
     );
+
+    test('BuiltInSkills provisions nib self-knowledge skill', () async {
+      final manager = SkillsManager.instance;
+      await manager.loadSkills(workspacePath: tempDir.path);
+
+      final nibSkill = manager.findSkill('nib');
+      expect(nibSkill, isNotNull);
+      expect(nibSkill!.name, equals('nib'));
+      expect(nibSkill.description, contains('~/.nib/config.json'));
+
+      final tool = SkillTool(skillsManager: manager);
+      final result = await tool.execute({'name': 'nib'});
+      expect(result.content, contains('Nib Reference Guide'));
+      expect(result.content, contains('https://github.com/nicklisac/nib'));
+      expect(result.content, contains('~/.nib/config.json'));
+    });
   });
 }
