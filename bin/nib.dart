@@ -223,7 +223,7 @@ void main(List<String> arguments) async {
     final provConf = config.findProvider(providerId)!;
     final model = explicitModel ?? provConf.model;
     final baseUrl = explicitBaseUrl ?? provConf.baseUrl;
-    final apiKey = explicitKey ?? provConf.apiKey;
+    final apiKey = explicitKey ?? provConf.resolvedApiKey;
 
     if (provConf.protocol == 'anthropic' ||
         provConf.name.toLowerCase().contains('anthropic')) {
@@ -309,14 +309,14 @@ void main(List<String> arguments) async {
               p.name.toLowerCase().contains('anthropic')) {
             provider = AnthropicProvider(
               model: p.model,
-              apiKey: p.apiKey,
+              apiKey: p.resolvedApiKey,
               baseUrl: p.baseUrl.isNotEmpty ? p.baseUrl : null,
             );
           } else {
             provider = OpenAiProvider(
               name: p.name,
               model: p.model,
-              apiKey: p.apiKey,
+              apiKey: p.resolvedApiKey,
               baseUrl: p.baseUrl,
             );
           }
@@ -430,7 +430,7 @@ void main(List<String> arguments) async {
     SearchFilesTool(workingDirectory: workspace),
     WebSearchTool(
       configuredProvider: config.searchProvider,
-      searchApiKey: config.searchApiKey,
+      searchApiKey: config.resolvedSearchApiKey,
     ),
     WebFetchTool(),
     SkillTool(),

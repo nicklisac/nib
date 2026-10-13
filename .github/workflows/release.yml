@@ -62,7 +62,7 @@ jobs:
         run: |
           TAG="${{ steps.vars.outputs.tag }}"
           ARCHIVE="nib-${TAG}-${{ matrix.target }}.tar.gz"
-          tar -czf "$ARCHIVE" ${{ matrix.binary_name }} README.md
+          tar -czf "$ARCHIVE" ${{ matrix.binary_name }} README.md config.example.json
           shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
 
       - name: Package archive (Windows)
@@ -71,7 +71,7 @@ jobs:
         run: |
           $Tag = "${{ steps.vars.outputs.tag }}"
           $Archive = "nib-$Tag-${{ matrix.target }}.zip"
-          Compress-Archive -Path ${{ matrix.binary_name }}, README.md -DestinationPath $Archive
+          Compress-Archive -Path ${{ matrix.binary_name }}, README.md, config.example.json -DestinationPath $Archive
           $hash = (Get-FileHash -Path $Archive -Algorithm SHA256).Hash.ToLower()
           "$hash  $Archive" | Out-File -Encoding ascii "$Archive.sha256"
 

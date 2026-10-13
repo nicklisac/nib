@@ -180,11 +180,23 @@ To configure multiple named providers, custom base URLs, or local endpoints, cre
     }
   },
   "search_provider": "exa",
+  "search_api_key": "EXA_API_KEY",
   "max_turns": 0,
   "max_stuck_iterations": 5,
   "hard_iteration_cap": 200
 }
 ```
+
+A fully filled-out example with every option ships with Nib. The installer puts it at `~/.nib/config.example.json` (it's also in the repo as `config.example.json`), so you can copy what you need from it.
+
+**API keys: paste them or point to an environment variable.** Every key field (`api_key` on a provider, and `search_api_key`) takes either the key itself or the name of an environment variable that holds it. Either works:
+
+```json
+"api_key": "sk-proj-abc123..."     // the key, pasted in
+"api_key": "OPENAI_API_KEY"        // or the name of the variable that has it
+```
+
+Using a variable name keeps the secret out of the file. `$OPENAI_API_KEY` and `${OPENAI_API_KEY}` work too. If the variable isn't set, Nib tells you which one is missing instead of sending a bad key.
 
 The agent's ceilings live in config, not in the binary, because the right value depends on the model you point Nib at. Set them per provider (inside the provider block, where they override the top-level values) or once at the top level.
 
@@ -193,6 +205,8 @@ The agent's ceilings live in config, not in the binary, because the right value 
 | `context_window` | provider-dependent | Token budget used for auto-compaction. Set this to what your provider serves; tabbyAPI reports it as `n_ctx_train` on `/v1/models`. |
 | `max_tokens` | provider default | Completion cap sent with each request. |
 | `supports_images` | unset (images allowed) | Set to `false` for a text-only model and Nib will warn and skip attached images instead of sending them. Set `true` to say the model handles vision. Set per provider. |
+| `search_provider` | unset | Web search provider: `exa`, `tavily` or `brave`. If unset, Nib uses whichever of `EXA_API_KEY`, `TAVILY_API_KEY` or `BRAVE_API_KEY` it finds, in that order. |
+| `search_api_key` | unset | Key for the search provider above, or the name of an environment variable holding it. Only used when `search_provider` is set. Falls back to the provider's usual environment variable if blank. |
 | `max_turns` | `0` (unbounded) | Hard per-prompt tool-loop ceiling. Leave it at `0`: a fixed low cap aborts valid work mid-task. |
 | `max_stuck_iterations` | `5` | A runaway guard. An iteration is its tool calls *and* their results; the loop stops when the identical pair occurs more times than this in one prompt. Raise it if you poll slow workflows that report unchanged status repeatedly. `0` disables it. |
 | `hard_iteration_cap` | `200` | Backstop for a misbehaving provider emitting endless distinct calls. Far above any real task; `0` disables it. |

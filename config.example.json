@@ -4,45 +4,74 @@
   "providers": {
     "anthropic": {
       "name": "Anthropic Claude",
+      "protocol": "anthropic",
       "model": "claude-3-7-sonnet-20250219",
       "base_url": "https://api.anthropic.com",
-      "api_key": "sk-ant-...",
+      "api_key": "ANTHROPIC_API_KEY",
       "context_window": 200000,
-      "max_tokens": 16384
+      "max_tokens": 16384,
+      "supports_images": true,
+      "thinking_level": "medium"
     },
     "openai": {
       "name": "OpenAI",
+      "protocol": "openai",
       "model": "gpt-4o",
       "base_url": "https://api.openai.com/v1",
-      "api_key": "sk-...",
+      "api_key": "OPENAI_API_KEY",
       "context_window": 128000,
-      "max_tokens": 4096
+      "max_tokens": 4096,
+      "supports_images": true,
+      "thinking_level": "medium"
     },
     "openrouter": {
       "name": "OpenRouter",
+      "protocol": "openai",
       "model": "anthropic/claude-3.7-sonnet",
       "base_url": "https://openrouter.ai/api/v1",
-      "api_key": "sk-or-...",
+      "api_key": "OPENROUTER_API_KEY",
       "context_window": 200000,
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "supports_images": true,
+      "thinking_level": "medium"
     },
     "gemini": {
       "name": "Google Gemini",
+      "protocol": "openai",
       "model": "gemini-2.5-flash",
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-      "api_key": "...",
+      "api_key": "GEMINI_API_KEY",
       "context_window": 1048576,
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "supports_images": true,
+      "thinking_level": "medium"
     },
     "ollama": {
       "name": "Ollama (Local)",
+      "protocol": "openai",
       "model": "llama3.1",
       "base_url": "http://localhost:11434/v1",
       "api_key": "ollama",
       "context_window": 32768,
-      "max_tokens": 4096
+      "max_tokens": 4096,
+      "supports_images": false,
+      "thinking_level": "medium"
+    },
+    "local": {
+      "name": "Local Server (tabbyAPI / vLLM / llama.cpp)",
+      "protocol": "openai",
+      "model": "your-model-name",
+      "base_url": "http://localhost:5000/v1",
+      "api_key": "",
+      "context_window": 32768,
+      "max_tokens": 4096,
+      "supports_images": false,
+      "thinking_level": "medium"
     }
   },
+  "search_provider": "exa",
+  "search_api_key": "EXA_API_KEY",
+  "thinking_level": "medium",
   "max_turns": 0,
   "max_stuck_iterations": 5,
   "hard_iteration_cap": 200

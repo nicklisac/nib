@@ -685,14 +685,14 @@ class SlashCommandHandler {
         if (pId == 'anthropic') {
           agent.provider = AnthropicProvider(
             model: p.model,
-            apiKey: p.apiKey,
+            apiKey: p.resolvedApiKey,
             baseUrl: p.baseUrl.isNotEmpty ? p.baseUrl : null,
           );
         } else {
           agent.provider = OpenAiProvider(
             name: p.name,
             model: p.model,
-            apiKey: p.apiKey,
+            apiKey: p.resolvedApiKey,
             baseUrl: p.baseUrl,
           );
         }
@@ -717,7 +717,7 @@ class SlashCommandHandler {
         name: p.name,
         model: p.model,
         baseUrl: p.baseUrl,
-        apiKey: p.apiKey,
+        apiKey: p.resolvedApiKey,
       );
       _writeln(
         Ansi.greenText(

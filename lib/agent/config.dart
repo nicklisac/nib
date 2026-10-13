@@ -2,6 +2,38 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
+final _dollarForm = RegExp(r'^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$');
+final _bareEnvName = RegExp(r'^([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)$');
+final _warnedSecrets = <String>{};
+
+/// Turns a config value into the actual secret. A key field may hold either the
+/// key itself or the *name* of an environment variable that holds it
+/// (`OPENAI_API_KEY`, `$OPENAI_API_KEY` or `${OPENAI_API_KEY}`).
+///
+/// A bare name is recognised only when it looks like one (capitals, digits and at
+/// least one underscore), which no real key does. If the variable is named but
+/// unset, this says so on stderr (once) and returns an empty key, rather than
+/// sending the variable's name to the server as if it were the key.
+String resolveSecret(
+  String raw, {
+  String label = 'api_key',
+  Map<String, String>? env,
+  void Function(String message)? warn,
+}) {
+  final value = raw.trim();
+  final match = _dollarForm.firstMatch(value) ?? _bareEnvName.firstMatch(value);
+  if (match == null) return raw;
+  final name = match.group(1)!;
+  final found = (env ?? Platform.environment)[name];
+  if (found != null && found.isNotEmpty) return found;
+  final message =
+      '$label points at the environment variable $name, but it is not set.';
+  if (_warnedSecrets.add(message)) {
+    (warn ?? (m) => stderr.writeln('  ⚠ $m'))(message);
+  }
+  return '';
+}
+
 class ProviderConfig {
   final String name;
   final String model;
@@ -34,6 +66,11 @@ class ProviderConfig {
     this.thinkingLevel,
     this.supportsImages,
   });
+
+  /// [apiKey] as written in config: a literal key or an environment variable name.
+  /// This is the value to use when talking to the provider.
+  String get resolvedApiKey =>
+      resolveSecret(apiKey, label: 'api_key for "$name"');
 
   factory ProviderConfig.fromJson(String id, Map<String, dynamic> json) {
     final baseUrl = (json['base_url'] as String? ?? 'https://api.openai.com/v1')
@@ -102,6 +139,15 @@ class NibConfig {
   final Map<String, dynamic> keybindings;
   String? searchProvider;
   String? searchApiKey;
+
+  /// [searchApiKey] as written in config (a literal key or an environment
+  /// variable name), resolved for use.
+  String? get resolvedSearchApiKey {
+    final raw = searchApiKey;
+    if (raw == null || raw.isEmpty) return raw;
+    return resolveSecret(raw, label: 'search_api_key');
+  }
+
   final String? thinkingLevel;
 
   NibConfig({

@@ -70,6 +70,14 @@ chmod +x "${INSTALL_DIR}/nib"
 
 echo "✔ Successfully installed Nib to ${INSTALL_DIR}/nib"
 
+# Drop a fully filled-out example config next to the real one. config.json itself
+# is never touched, so an existing setup is safe.
+if [ -f "${TMP_DIR}/config.example.json" ]; then
+  mkdir -p "$HOME/.nib"
+  cp -f "${TMP_DIR}/config.example.json" "$HOME/.nib/config.example.json"
+  echo "  Example config with every option: ~/.nib/config.example.json"
+fi
+
 # Verify if INSTALL_DIR is in PATH
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;

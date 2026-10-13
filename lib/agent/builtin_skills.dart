@@ -66,6 +66,8 @@ Nib loads configuration from `.nib/config.json` in the current workspace, or `~/
 ```
 
 ### Supported Web Search Providers
+Every key field (`api_key` on a provider and `search_api_key`) accepts either the key itself or the NAME of an environment variable, such as `"api_key": "OPENAI_API_KEY"`. A variable name is looked up at launch, so the secret never has to sit in the file. If the named variable is not set, Nib says so and sends no key.
+
 - **Exa**: `"search_provider": "exa"`, requires `search_api_key` or `EXA_API_KEY`.
 - **Tavily**: `"search_provider": "tavily"`, requires `search_api_key` or `TAVILY_API_KEY`.
 - **Brave**: `"search_provider": "brave"`, requires `search_api_key` or `BRAVE_API_KEY`.
