@@ -4,8 +4,8 @@ import 'package:test/test.dart';
 
 void main() {
   group('NibUpdater Tests', () {
-    test('currentVersion matches 0.2.2', () {
-      expect(NibUpdater.currentVersion, equals('0.2.2'));
+    test('currentVersion matches 0.2.3', () {
+      expect(NibUpdater.currentVersion, equals('0.2.3'));
     });
 
     test('Ansi.banner includes update notice when provided', () {

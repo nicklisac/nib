@@ -70,6 +70,7 @@ class TerminalManager {
   final InputDecoder _decoder = InputDecoder();
   Completer<Object>? _pendingNextInput;
   StreamSubscription<List<int>>? _stdinSub;
+  List<StreamSubscription<ProcessSignal>>? _signalSubs;
 
   bool _isRawMode = false;
   bool _bracketedPaste = false;
@@ -127,10 +128,14 @@ class TerminalManager {
     if (_initialized) return;
     _initialized = true;
 
-    // Guaranteed cleanup on SIGTERM
+    // Guaranteed cleanup on process exit signals (SIGTERM, SIGHUP, SIGQUIT)
     try {
       if (!Platform.isWindows) {
-        ProcessSignal.sigterm.watch().listen((_) => shutdown(143));
+        _signalSubs = [
+          ProcessSignal.sigterm.watch().listen((_) => shutdown(143)),
+          ProcessSignal.sighup.watch().listen((_) => shutdown(129)),
+          ProcessSignal.sigquit.watch().listen((_) => shutdown(131)),
+        ];
       }
     } catch (_) {
       // In piped or non-terminal test environments, signal watch might throw
@@ -225,11 +230,25 @@ class TerminalManager {
       } catch (_) {}
       _isRawMode = false;
     }
+    // Defensive reset: restore Dart's native lineMode and echoMode
+    try {
+      if (stdin.hasTerminal) {
+        stdin.lineMode = true;
+        stdin.echoMode = true;
+      }
+    } catch (_) {}
+    // Reset ANSI cursor and screen coordinator
     try {
       stdout.write('\x1B[?25h'); // Show cursor
     } catch (_) {}
     try {
       ScreenCoordinator.instance.deactivate();
+    } catch (_) {}
+    // Emergency stty sanity check on POSIX systems
+    try {
+      if (!Platform.isWindows && stdin.hasTerminal) {
+        Process.runSync('stty', ['echo', 'icanon'], runInShell: false);
+      }
     } catch (_) {}
   }
 
@@ -238,6 +257,12 @@ class TerminalManager {
     disableRawMode();
     _stdinSub?.cancel();
     _stdinSub = null;
+    if (_signalSubs != null) {
+      for (final sub in _signalSubs!) {
+        sub.cancel();
+      }
+      _signalSubs = null;
+    }
     _initialized = false;
   }
 
