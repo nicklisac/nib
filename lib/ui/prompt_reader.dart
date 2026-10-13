@@ -693,35 +693,25 @@ class PromptReader {
 
             case ControlCharacter.ctrlC:
               _clearPalette();
-              if (buffer.isNotEmpty) {
-                // Ctrl+C on a non-empty line used to wipe the line. An interrupt
-                // never discards a draft (feel doctrine rule 2), so it stops
-                // clearing and falls through to the exit hint instead.
-                if (_cursorRow > 0) {
-                  _out('\x1B[${_cursorRow}A');
-                }
+              final now = DateTime.now();
+              if (_lastCtrlCTime != null &&
+                  now.difference(_lastCtrlCTime!) <
+                      const Duration(seconds: 2)) {
                 _out('\n');
+                return null;
+              } else {
+                _lastCtrlCTime = now;
+                _out('\n');
+                _out(
+                  '  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}\n',
+                );
                 _cursorRow = 0;
                 _paletteLines = 0;
                 _out(prompt);
-                _repaint(prompt, buffer, cursor);
-                continue;
-              } else {
-                final now = DateTime.now();
-                if (_lastCtrlCTime != null &&
-                    now.difference(_lastCtrlCTime!) <
-                        const Duration(seconds: 2)) {
-                  _out('\n');
-                  return null;
-                } else {
-                  _lastCtrlCTime = now;
-                  _out('\n');
-                  _out(
-                    '  ${NibTheme.current.muted.text('(Press Ctrl+C again to exit, or /exit)')}\n',
-                  );
-                  _out(prompt);
-                  continue;
+                if (buffer.isNotEmpty) {
+                  _repaint(prompt, buffer, cursor);
                 }
+                continue;
               }
 
             case ControlCharacter.ctrlD:

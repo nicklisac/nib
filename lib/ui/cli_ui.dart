@@ -222,8 +222,8 @@ class CliUi {
           continue;
         }
 
-        if (submitted == null) {
-          // EOF (Ctrl+D)
+        if (submitted == null || submitted.kind == SubmitKind.eof) {
+          // EOF (Ctrl+D or double Ctrl+C)
           _writeLine('');
           _writeLine(theme.muted.text('Session saved. Goodbye!'));
           break;

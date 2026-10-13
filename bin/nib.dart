@@ -484,6 +484,9 @@ void main(List<String> arguments) async {
 
     // Interactive CLI REPL
     await ui.run();
+    // run() returning means the human asked to leave. Background timers or open
+    // handles must not keep the process alive after the goodbye.
+    TerminalManager.instance.shutdown(0);
   } finally {
     TerminalManager.instance.dispose();
   }
