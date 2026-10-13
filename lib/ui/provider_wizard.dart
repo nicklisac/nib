@@ -124,19 +124,22 @@ class ProviderSetupWizard {
     out.writeLine('');
 
     // 1. Provider profile name
-    stdout.write('  Provider name [${chosen.defaultName}]: ');
-    final nameInput = stdin.readLineSync()?.trim() ?? '';
-    final providerName = nameInput.isNotEmpty ? nameInput : chosen.defaultName;
+    final providerName = await _readLineInput(
+      prompt: '  Provider name [${chosen.defaultName}]: ',
+      defaultValue: chosen.defaultName,
+    );
 
     // 2. Base URL / Endpoint
-    stdout.write('  Base URL [${chosen.defaultBaseUrl}]: ');
-    final urlInput = stdin.readLineSync()?.trim() ?? '';
-    final baseUrl = urlInput.isNotEmpty ? urlInput : chosen.defaultBaseUrl;
+    final baseUrl = await _readLineInput(
+      prompt: '  Base URL [${chosen.defaultBaseUrl}]: ',
+      defaultValue: chosen.defaultBaseUrl,
+    );
 
     // 3. Model name
-    stdout.write('  Model [${chosen.defaultModel}]: ');
-    final modelInput = stdin.readLineSync()?.trim() ?? '';
-    final model = modelInput.isNotEmpty ? modelInput : chosen.defaultModel;
+    final model = await _readLineInput(
+      prompt: '  Model [${chosen.defaultModel}]: ',
+      defaultValue: chosen.defaultModel,
+    );
 
     // 4. API Key (hidden)
     final apiKey = await _readSecretInput(
@@ -206,6 +209,42 @@ class ProviderSetupWizard {
     out.rewind(count + 3);
   }
 
+  static Future<String> _readLineInput({
+    required String prompt,
+    required String defaultValue,
+  }) async {
+    stdout.write(prompt);
+    final buffer = StringBuffer();
+
+    while (true) {
+      final key = await TerminalManager.instance.nextKey();
+      if (key.isControl) {
+        if (key.controlChar == ControlCharacter.enter) {
+          stdout.writeln();
+          final val = buffer.toString().trim();
+          return val.isNotEmpty ? val : defaultValue;
+        } else if (key.controlChar == ControlCharacter.backspace) {
+          if (buffer.isNotEmpty) {
+            final s = buffer.toString();
+            buffer.clear();
+            buffer.write(s.substring(0, s.length - 1));
+            stdout.write('\b \b');
+          }
+        } else if (key.controlChar == ControlCharacter.ctrlC ||
+            key.controlChar == ControlCharacter.escape) {
+          stdout.writeln();
+          return defaultValue;
+        }
+      } else {
+        final c = key.char;
+        if (c.isNotEmpty && c.codeUnitAt(0) >= 32) {
+          buffer.write(c);
+          stdout.write(c);
+        }
+      }
+    }
+  }
+
   static Future<String> _readSecretInput({
     required String prompt,
     required NibTheme theme,
@@ -227,7 +266,8 @@ class ProviderSetupWizard {
             buffer.write(s.substring(0, s.length - 1));
             stdout.write('\b \b');
           }
-        } else if (key.controlChar == ControlCharacter.ctrlC) {
+        } else if (key.controlChar == ControlCharacter.ctrlC ||
+            key.controlChar == ControlCharacter.escape) {
           stdout.writeln();
           return '';
         }
