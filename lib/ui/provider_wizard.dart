@@ -164,16 +164,16 @@ class ProviderSetupWizard {
 
     await config.save();
 
-    out.writeLine('');
-    out.writeLine(
+    stdout.writeln();
+    stdout.writeln(
       theme.success.text(
         '  ✔ Saved provider "$providerName" to ~/.nib/config.json!',
       ),
     );
-    out.writeLine(
+    stdout.writeln(
       '  Active: ${theme.accent.text(providerName)} | Model: ${theme.accent.text(model)} | Endpoint: ${theme.muted.text(baseUrl)}',
     );
-    out.writeLine('');
+    stdout.writeln();
 
     return config;
   }

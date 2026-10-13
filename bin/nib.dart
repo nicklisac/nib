@@ -210,17 +210,17 @@ void main(List<String> arguments) async {
   final env = Platform.environment;
 
   // Determine active provider ID
-  final providerId = isMock
+  var providerId = isMock
       ? 'mock'
-      : (explicitProvider ?? config.defaultProvider).toLowerCase();
+      : (explicitProvider ?? config.defaultProvider);
 
   LLMProvider provider;
 
   if (providerId == 'mock') {
     provider = MockProvider();
-  } else if (config.providers.containsKey(providerId)) {
+  } else if (config.findProvider(providerId) != null) {
     // Configured provider profile from ~/.nib/config.json
-    final provConf = config.providers[providerId]!;
+    final provConf = config.findProvider(providerId)!;
     final model = explicitModel ?? provConf.model;
     final baseUrl = explicitBaseUrl ?? provConf.baseUrl;
     final apiKey = explicitKey ?? provConf.apiKey;
@@ -240,21 +240,21 @@ void main(List<String> arguments) async {
         baseUrl: baseUrl,
       );
     }
-  } else if (providerId == 'anthropic') {
+  } else if (providerId.toLowerCase() == 'anthropic') {
     final key = explicitKey ?? env['ANTHROPIC_API_KEY'] ?? '';
     provider = AnthropicProvider(
       model: explicitModel ?? 'claude-3-7-sonnet-20250219',
       apiKey: key,
       baseUrl: explicitBaseUrl,
     );
-  } else if (providerId == 'ollama') {
+  } else if (providerId.toLowerCase() == 'ollama') {
     provider = OpenAiProvider(
       name: 'Ollama (Local)',
       model: explicitModel ?? 'llama3.1',
       apiKey: 'ollama',
       baseUrl: explicitBaseUrl ?? 'http://localhost:11434/v1',
     );
-  } else if (providerId == 'openrouter') {
+  } else if (providerId.toLowerCase() == 'openrouter') {
     final key = explicitKey ?? env['OPENROUTER_API_KEY'] ?? '';
     provider = OpenAiProvider(
       name: 'OpenRouter',
@@ -262,7 +262,7 @@ void main(List<String> arguments) async {
       apiKey: key,
       baseUrl: explicitBaseUrl ?? 'https://openrouter.ai/api/v1',
     );
-  } else if (providerId == 'openai') {
+  } else if (providerId.toLowerCase() == 'openai') {
     final key = explicitKey ?? env['OPENAI_API_KEY'] ?? '';
     provider = OpenAiProvider(
       name: 'OpenAI',
@@ -296,12 +296,13 @@ void main(List<String> arguments) async {
       final configured = await ProviderSetupWizard.run(existingConfig: config);
       if (configured != null) {
         // Re-resolve provider from updated config
-        final newProvId = configured.defaultProvider.toLowerCase();
-        if (newProvId == 'mock') {
+        providerId = configured.defaultProvider;
+        if (providerId.toLowerCase() == 'mock') {
           provider = MockProvider();
-        } else if (configured.providers.containsKey(newProvId)) {
-          final p = configured.providers[newProvId]!;
-          if (newProvId == 'anthropic') {
+        } else if (configured.findProvider(providerId) != null) {
+          final p = configured.findProvider(providerId)!;
+          if (p.protocol == 'anthropic' ||
+              p.name.toLowerCase().contains('anthropic')) {
             provider = AnthropicProvider(
               model: p.model,
               apiKey: p.apiKey,
@@ -430,7 +431,7 @@ void main(List<String> arguments) async {
 
   // The active provider wins over the top-level values: loop ceilings and the
   // context window belong to the model, not to the binary.
-  final activeProviderConf = config.providers[providerId];
+  final activeProviderConf = config.findProvider(providerId);
   final activeContextWindow =
       activeProviderConf?.contextWindow ?? config.contextWindow;
   final activeMaxTokens = activeProviderConf?.maxTokens ?? config.maxTokens;

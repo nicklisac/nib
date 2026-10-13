@@ -119,7 +119,17 @@ class NibConfig {
   }) : providers = providers ?? {},
        keybindings = keybindings ?? {};
 
-  /// Loads this repository's own instructions from AGENTS.md (or CLAUDE.md).
+  /// Look up a provider profile by ID (case-insensitive)
+  ProviderConfig? findProvider(String? id) {
+    if (id == null || id.isEmpty) return null;
+    if (providers.containsKey(id)) return providers[id];
+    final lower = id.toLowerCase();
+    for (final entry in providers.entries) {
+      if (entry.key.toLowerCase() == lower) return entry.value;
+    }
+    return null;
+  }
+
   ///
   /// Returned text is appended after the global APPEND_SYSTEM.md so per-project
   /// conventions, doc pointers, and the issue-tracker location reach the model.
