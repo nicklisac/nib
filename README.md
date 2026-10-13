@@ -78,9 +78,16 @@ lib/
 
 **Option A: One-line install (Standalone Binary, zero dependencies)**
 
-No Dart SDK or compiler required:
+No Dart SDK or compiler required.
+
+**Linux & macOS:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nicklisac/nib/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/nicklisac/nib/main/install.ps1 | iex
 ```
 
 To update Nib at any time to the latest release:
