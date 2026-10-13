@@ -8,11 +8,11 @@ Nib is not a windowed TUI or full-screen GUI—it is a pure terminal streaming C
 
 ## 💭 Why Nib?
 
-**The name.** A nib is the tip of a pen, the small part that actually touches the page. That's the idea here: a small tool that does the writing and little else. It also nods to Pi and Tau, which are short names for small agents, and it's why the prompt is a ✒.
+**The name.** A nib ✒ is the tip of a pen, the small part that actually touches the page. That's the idea here: a small tool that does the writing and little else.
 
 **Why Dart.** Dart is an underrated language for command-line tools:
 
-- **One file to install.** It compiles to a standalone binary, so there's no Node, Python or package manager to set up first.
+- **One file to install.** It compiles to a standalone binary (~11MB), so there's no Node, Python or package manager to set up first.
 - **Starts instantly.** It launches in a fraction of a second, which matters for something you open and close all day.
 - **Good at streaming.** Async and streams are built into the language, which suits a program whose main job is reading tokens as they arrive.
 - **Hard to break quietly.** Static types and null safety catch a lot of mistakes before they ever run.
@@ -150,12 +150,12 @@ To configure multiple named providers, custom base URLs, or local endpoints, cre
 
 ```json
 {
-  "default_provider": "anthropic",
-  "default_model": "claude-3-7-sonnet-20250219",
+  "default_provider": "[provider name]",
+  "default_model": "[model name]",
   "providers": {
     "anthropic": {
       "name": "Anthropic Claude",
-      "model": "claude-3-7-sonnet-20250219",
+      "model": "[model name]",
       "base_url": "https://api.anthropic.com",
       "api_key": "sk-ant-...",
       "context_window": 200000,
@@ -163,19 +163,20 @@ To configure multiple named providers, custom base URLs, or local endpoints, cre
     },
     "openai": {
       "name": "OpenAI",
-      "model": "gpt-4o",
+      "model": "[model name]",
       "base_url": "https://api.openai.com/v1",
       "api_key": "sk-...",
       "context_window": 128000,
       "max_tokens": 4096
     },
     "local": {
-      "name": "Local Server (Ollama / vLLM / tabbyAPI)",
-      "model": "qwen2.5-coder:7b",
-      "base_url": "http://localhost:11434/v1",
-      "api_key": "optional-key",
-      "context_window": 32768,
-      "max_tokens": 4096
+          "name": "Local Server (Ollama / vLLM / tabbyAPI)",
+          "model": "Qwen3.8-Flash-Next",
+          "base_url": "http://localhost:1234/v1",
+          "api_key": "optional-key",
+          "context_window": 262144,
+          "max_tokens": 32768,
+          "supports_images": true
     }
   },
   "search_provider": "exa",
@@ -189,10 +190,11 @@ The agent's ceilings live in config, not in the binary, because the right value 
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `context_window` | provider-dependent | Token budget used for auto-compaction. Set this to what your server actually serves; tabbyAPI reports it as `n_ctx_train` on `/v1/models`. |
+| `context_window` | provider-dependent | Token budget used for auto-compaction. Set this to what your provider serves; tabbyAPI reports it as `n_ctx_train` on `/v1/models`. |
 | `max_tokens` | provider default | Completion cap sent with each request. |
+| `supports_images` | unset (images allowed) | Set to `false` for a text-only model and Nib will warn and skip attached images instead of sending them. Set `true` to say the model handles vision. Set per provider. |
 | `max_turns` | `0` (unbounded) | Hard per-prompt tool-loop ceiling. Leave it at `0`: a fixed low cap aborts valid work mid-task. |
-| `max_stuck_iterations` | `5` | The real runaway guard. An iteration is its tool calls *and* their results; the loop stops when the identical pair occurs more times than this in one prompt. Raise it if you poll slow workflows that report unchanged status repeatedly. `0` disables it. |
+| `max_stuck_iterations` | `5` | A runaway guard. An iteration is its tool calls *and* their results; the loop stops when the identical pair occurs more times than this in one prompt. Raise it if you poll slow workflows that report unchanged status repeatedly. `0` disables it. |
 | `hard_iteration_cap` | `200` | Backstop for a misbehaving provider emitting endless distinct calls. Far above any real task; `0` disables it. |
 
 Repeating a command whose output changed (polling a build, watching a log) counts as progress and never trips the guard.
@@ -201,9 +203,9 @@ Repeating a command whose output changed (polling a build, watching a log) count
 
 ## 🧩 Skills
 
-Nib loads skills from two places only: `<workspace>/.nib/skills/<name>/SKILL.md` and `~/.nib/skills/<name>/SKILL.md`. Skills belonging to other agent harnesses are deliberately not imported.
+Nib loads skills from two places only: `<workspace>/.nib/skills/<name>/SKILL.md` and `~/.nib/skills/<name>/SKILL.md`.
 
-One skill ships inside Nib itself: `nib`. It covers the config file, slash commands, flags, providers and search setup, so on a fresh machine you can just ask Nib how it works or to help configure itself. If you want to build or change Nib, the project's own docs ([`docs/feel.md`](docs/feel.md), [`docs/adr/`](docs/adr), [`CONTEXT.md`](CONTEXT.md)) live in this repo.
+One skill ships inside Nib itself: `nib`. It covers the config file, slash commands, flags, providers and search setup, so on a fresh machine you can just ask Nib how it works or to help configure itself. If you want to build or change Nib, the project's own docs ([`docs/adr/`](docs/adr), [`CONTEXT.md`](CONTEXT.md)) live in this repo.
 
 Only a name and description index is injected into the system prompt (a few hundred tokens rather than every skill body). The model fetches a full body on demand with the `skill` tool, and reads a skill's companion files the same way via `file`, since global skills live outside the workspace where `read_file` cannot reach them.
 
@@ -215,7 +217,7 @@ A skill with `disable-model-invocation: true` in its frontmatter is hidden from 
 
 - **Persistent Shell History (`~/.nib/history`)**: Up/Down arrow key recall cycles previous prompts.
 - **Tab Autocomplete**: Tab key completes `/slash` commands and `@file` workspace paths.
-- **Tau-Style Context Compaction**: Auto-compacts conversation history above threshold or on-demand (`/compact`), generating structured goal/progress checkpoints while keeping recent turns intact.
+- **Context Compaction**: Auto-compacts conversation history above threshold or on-demand (`/compact`), generating structured goal/progress checkpoints while keeping recent turns intact.
 - **Context Guardrails**: Automatically caps oversized tool outputs (e.g. huge file reads or command dumps) to prevent exhausting VRAM or model context.
 - **TrueColor Themes**: Switch between Catppuccin Mocha, Tokyo Night, Nord, Gruvbox, Dracula, Rosé Pine, One Dark, Monokai, Kanagawa, Everforest, Solarized, GitHub Dark and Synthwave anytime (`/theme tokyonight`).
 - **Markdown Tables**: Automatically parses GitHub-flavored markdown tables into Unicode rounded box-grid tables with column alignments (`:---:`, `---:`).
