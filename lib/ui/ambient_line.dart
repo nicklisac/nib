@@ -310,7 +310,14 @@ class AmbientLine {
     _visible = true;
     _render();
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) => _tick());
+    if (_state == AmbientState.streaming || _state == AmbientState.tool) {
+      _timer = Timer.periodic(
+        const Duration(milliseconds: 100),
+        (_) => _tick(),
+      );
+    } else {
+      _timer = null;
+    }
   }
 
   void _tick() {

@@ -96,8 +96,10 @@ void main() {
       writes.clear();
       coord.renderStatus('Model: Qwen3.8 | ~1%');
 
-      expect(writes.first, equals('\x1B7'));
-      expect(writes.last, equals('\x1B8'));
+      expect(writes.first, equals('\x1B[?25l'));
+      expect(writes, contains('\x1B7'));
+      expect(writes, contains('\x1B8'));
+      expect(writes.last, equals('\x1B[?25h'));
       expect(writes, contains('\x1B[30;1H\x1B[2KModel: Qwen3.8 | ~1%'));
     });
 

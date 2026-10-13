@@ -583,8 +583,10 @@ class ScreenCoordinator implements TranscriptWriter {
   /// moving the human's cursor.
   void renderStatus(String statusText) {
     if (!_active || !isSupported) return;
+    _out('\x1B[?25l');
     _out('\x1B7');
     _out('\x1B[$statusRow;1H\x1B[2K$statusText');
     _out('\x1B8');
+    _out('\x1B[?25h');
   }
 }
