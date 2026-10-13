@@ -3,6 +3,7 @@
 #   irm https://raw.githubusercontent.com/nicklisac/nib/main/install.ps1 | iex
 
 $ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Repo = "nicklisac/nib"
 $Target = "windows-x64"
@@ -33,7 +34,14 @@ New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 try {
     $ZipPath = Join-Path $TempDir $ArchiveName
     Write-Host "Downloading Nib $LatestTag..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath
+    try {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath -UseBasicParsing -Headers @{ "User-Agent" = "nib-installer" }
+    } catch {
+        # Fallback to System.Net.WebClient for older PowerShell 5.1 engines
+        $WebClient = New-Object System.Net.WebClient
+        $WebClient.Headers.Add("User-Agent", "nib-installer")
+        $WebClient.DownloadFile($DownloadUrl, $ZipPath)
+    }
 
     Write-Host "Extracting..." -ForegroundColor Cyan
     Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
