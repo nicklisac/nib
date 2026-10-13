@@ -202,26 +202,22 @@ class ProviderSetupWizard {
     config.defaultProvider = providerName;
     config.defaultModel = model;
 
-    // 6. Optional Web Search Provider Setup (Enter to skip)
+    // 6. Optional Web Search Provider Setup
     out.writeLine('');
-    final currentSearch = config.searchProvider;
-    final searchHint = currentSearch != null ? ' [$currentSearch]' : '';
-    out.writeLine(
-      theme.muted.text(
-        '  Web Search Provider (Optional: exa, tavily, brave, or Enter to skip):',
-      ),
+    final selectedSearch = await _selectWebSearchProvider(
+      theme: theme,
+      out: out,
     );
-    out.writeLine(
-      theme.muted.text(
-        '  (Hint: If skipped, Nib can help you set up or configure search anytime)',
-      ),
-    );
-    final searchInput = await _readLineInput(
-      prompt: '  Search provider$searchHint: ',
-      defaultValue: currentSearch ?? '',
-    );
-    if (searchInput.isNotEmpty) {
-      config.searchProvider = searchInput.toLowerCase();
+    if (selectedSearch != null) {
+      config.searchProvider = selectedSearch.id;
+      final key = await _readSecretInput(
+        prompt: '  ${selectedSearch.name} API Key: ',
+        theme: theme,
+        out: out,
+      );
+      if (key.isNotEmpty) {
+        config.searchApiKey = key;
+      }
     }
 
     final provConfig = ProviderConfig(
@@ -583,6 +579,106 @@ class ProviderSetupWizard {
   }
 
   static void _clearModelMenu(int count, TranscriptWriter out) {
+    out.rewind(count + 3);
+  }
+
+  static Future<({String id, String name})?> _selectWebSearchProvider({
+    required NibTheme theme,
+    required TranscriptWriter out,
+  }) async {
+    const searchOptions = [
+      (id: 'exa', name: 'Exa (api.exa.ai)'),
+      (id: 'tavily', name: 'Tavily (tavily.com)'),
+      (id: 'brave', name: 'Brave Search (brave.com)'),
+      (id: 'none', name: 'Skip (Nib can help configure search anytime)'),
+    ];
+
+    var selectedIndex = 0;
+    _renderSearchMenu(searchOptions, selectedIndex, theme, out);
+
+    while (true) {
+      final event = await TerminalManager.instance.nextInput();
+      if (event is Key) {
+        final key = event;
+        if (key.isControl) {
+          switch (key.controlChar) {
+            case ControlCharacter.arrowUp:
+              selectedIndex =
+                  (selectedIndex - 1 + searchOptions.length) %
+                  searchOptions.length;
+              _clearSearchMenu(searchOptions.length, out);
+              _renderSearchMenu(searchOptions, selectedIndex, theme, out);
+              break;
+            case ControlCharacter.arrowDown:
+              selectedIndex = (selectedIndex + 1) % searchOptions.length;
+              _clearSearchMenu(searchOptions.length, out);
+              _renderSearchMenu(searchOptions, selectedIndex, theme, out);
+              break;
+            case ControlCharacter.enter:
+              _clearSearchMenu(searchOptions.length, out);
+              final chosen = searchOptions[selectedIndex];
+              if (chosen.id == 'none') {
+                out.writeLine('  Web Search: ${theme.muted.text('Skipped')}');
+                return null;
+              }
+              out.writeLine('  Web Search: ${theme.accent.text(chosen.name)}');
+              return (id: chosen.id, name: chosen.name);
+            case ControlCharacter.ctrlC:
+            case ControlCharacter.escape:
+              _clearSearchMenu(searchOptions.length, out);
+              out.writeLine('  Web Search: ${theme.muted.text('Skipped')}');
+              return null;
+            default:
+              break;
+          }
+        } else {
+          final char = key.char;
+          final numVal = int.tryParse(char);
+          if (numVal != null && numVal >= 1 && numVal <= searchOptions.length) {
+            _clearSearchMenu(searchOptions.length, out);
+            final chosen = searchOptions[numVal - 1];
+            if (chosen.id == 'none') {
+              out.writeLine('  Web Search: ${theme.muted.text('Skipped')}');
+              return null;
+            }
+            out.writeLine('  Web Search: ${theme.accent.text(chosen.name)}');
+            return (id: chosen.id, name: chosen.name);
+          }
+        }
+      }
+    }
+  }
+
+  static void _renderSearchMenu(
+    List<({String id, String name})> options,
+    int selected,
+    NibTheme theme,
+    TranscriptWriter out,
+  ) {
+    out.writeLine(
+      '  ${theme.muted.text('╭──')} ${theme.accent.text('Select Web Search Provider (Optional)')} ${theme.muted.text('─' * 15)}',
+    );
+    for (int i = 0; i < options.length; i++) {
+      final opt = options[i];
+      final isSelected = i == selected;
+      final pointer = isSelected ? theme.accent.text('▸') : ' ';
+      final indexStr = theme.secondary.text('[${i + 1}]');
+
+      if (isSelected) {
+        out.writeLine(
+          '    $pointer $indexStr ${theme.surface.bg}${theme.accent.text(" ${opt.name} ")}\x1B[0m',
+        );
+      } else {
+        out.writeLine('    $pointer $indexStr ${theme.primary.text(opt.name)}');
+      }
+    }
+    out.writeLine('  ${theme.muted.text('╰──${'─' * 45}')}');
+    out.writeLine(
+      '  ${theme.muted.text('Use ↑/↓ arrows to navigate, Enter to select, 1-${options.length} to choose')}',
+    );
+  }
+
+  static void _clearSearchMenu(int count, TranscriptWriter out) {
     out.rewind(count + 3);
   }
 }

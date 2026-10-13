@@ -254,6 +254,7 @@ class BraveSearchProvider implements SearchProvider {
 class SearchProviderResolver {
   static SearchProvider? resolve({
     String? configuredProvider,
+    String? searchApiKey,
     Map<String, String>? env,
     http.Client? client,
   }) {
@@ -261,24 +262,33 @@ class SearchProviderResolver {
     final requested = configuredProvider?.trim().toLowerCase();
 
     if (requested == 'exa') {
-      final key = environment['EXA_API_KEY'];
+      final key = (searchApiKey != null && searchApiKey.isNotEmpty)
+          ? searchApiKey
+          : environment['EXA_API_KEY'];
       return key != null && key.isNotEmpty
           ? ExaSearchProvider(key, client: client)
           : null;
     } else if (requested == 'tavily') {
-      final key = environment['TAVILY_API_KEY'];
+      final key = (searchApiKey != null && searchApiKey.isNotEmpty)
+          ? searchApiKey
+          : environment['TAVILY_API_KEY'];
       return key != null && key.isNotEmpty
           ? TavilySearchProvider(key, client: client)
           : null;
     } else if (requested == 'brave') {
-      final key = environment['BRAVE_API_KEY'];
+      final key = (searchApiKey != null && searchApiKey.isNotEmpty)
+          ? searchApiKey
+          : environment['BRAVE_API_KEY'];
       return key != null && key.isNotEmpty
           ? BraveSearchProvider(key, client: client)
           : null;
     }
 
     // Auto-detect based on available keys: Exa -> Tavily -> Brave
-    final exaKey = environment['EXA_API_KEY'];
+    final exaKey =
+        (searchApiKey != null && searchApiKey.isNotEmpty && requested == 'exa')
+        ? searchApiKey
+        : environment['EXA_API_KEY'];
     if (exaKey != null && exaKey.isNotEmpty) {
       return ExaSearchProvider(exaKey, client: client);
     }

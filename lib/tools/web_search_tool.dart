@@ -4,10 +4,16 @@ import 'search_provider.dart';
 /// Tool allowing the model to perform web searches via configurable providers (Exa, Tavily, Brave).
 class WebSearchTool extends AgentTool {
   final String? configuredProvider;
+  final String? searchApiKey;
   final SearchProvider? providerOverride;
   final Map<String, String>? env;
 
-  WebSearchTool({this.configuredProvider, this.providerOverride, this.env});
+  WebSearchTool({
+    this.configuredProvider,
+    this.searchApiKey,
+    this.providerOverride,
+    this.env,
+  });
 
   @override
   String get name => 'web_search';
@@ -67,6 +73,7 @@ class WebSearchTool extends AgentTool {
         providerOverride ??
         SearchProviderResolver.resolve(
           configuredProvider: configuredProvider,
+          searchApiKey: searchApiKey,
           env: env,
         );
 

@@ -424,7 +424,10 @@ void main(List<String> arguments) async {
     EditFileTool(workingDirectory: workspace),
     ListDirTool(workingDirectory: workspace),
     SearchFilesTool(workingDirectory: workspace),
-    WebSearchTool(configuredProvider: config.searchProvider),
+    WebSearchTool(
+      configuredProvider: config.searchProvider,
+      searchApiKey: config.searchApiKey,
+    ),
     WebFetchTool(),
     SkillTool(),
   ];

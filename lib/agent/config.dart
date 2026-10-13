@@ -101,6 +101,7 @@ class NibConfig {
   final int hardIterationCap;
   final Map<String, dynamic> keybindings;
   String? searchProvider;
+  String? searchApiKey;
   final String? thinkingLevel;
 
   NibConfig({
@@ -115,6 +116,7 @@ class NibConfig {
     this.hardIterationCap = 200,
     Map<String, dynamic>? keybindings,
     this.searchProvider,
+    this.searchApiKey,
     this.thinkingLevel,
   }) : providers = providers ?? {},
        keybindings = keybindings ?? {};
@@ -223,6 +225,7 @@ class NibConfig {
                 ? Map<String, dynamic>.from(json['keybindings'] as Map)
                 : null,
             searchProvider: json['search_provider'] as String?,
+            searchApiKey: json['search_api_key'] as String?,
             thinkingLevel: json['thinking_level'] as String?,
           );
         } catch (_) {
@@ -311,6 +314,8 @@ class NibConfig {
       if (hardIterationCap != 200) 'hard_iteration_cap': hardIterationCap,
       if (keybindings.isNotEmpty) 'keybindings': keybindings,
       if (searchProvider != null) 'search_provider': searchProvider,
+      if (searchApiKey != null && searchApiKey!.isNotEmpty)
+        'search_api_key': searchApiKey,
       if (thinkingLevel != null) 'thinking_level': thinkingLevel,
       'providers': providers.map((k, v) => MapEntry(k, v.toJson())),
     };
