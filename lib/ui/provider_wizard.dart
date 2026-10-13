@@ -93,6 +93,7 @@ class ProviderSetupWizard {
             chosen = protocols[selectedIndex];
             break;
           case ControlCharacter.ctrlC:
+          case ControlCharacter.escape:
             _clearMenu(protocols.length, out);
             out.writeLine(theme.muted.text('  Setup cancelled.'));
             return null;
@@ -101,7 +102,10 @@ class ProviderSetupWizard {
         }
       } else {
         final char = key.char;
-        if (char == 'q' || char == 'Q' || key.char == '\x1B') {
+        if (char == 'q' ||
+            char == 'Q' ||
+            char == '\x1B' ||
+            key.char == '\x1B') {
           _clearMenu(protocols.length, out);
           out.writeLine(theme.muted.text('  Setup cancelled.'));
           return null;

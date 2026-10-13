@@ -58,6 +58,7 @@ class SessionPicker {
             return chosen;
 
           case ControlCharacter.ctrlC:
+          case ControlCharacter.escape:
             _clearMenu(items.length, out);
             out.writeLine(theme.muted.text('  Cancelled session selection.'));
             return null;
