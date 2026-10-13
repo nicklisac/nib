@@ -22,6 +22,9 @@ lib/
 │   ├── compaction.dart     # Tau-style context compaction & summarization checkpoint engine
 │   ├── config.dart         # ~/.nib/config.json & standard environment variable auto-detection
 │   ├── session.dart        # Message transcript, token accounting & ~/.nib/sessions/ persistence
+│   ├── skills.dart         # Skill discovery and the lazy name/description index
+│   ├── builtin_skills.dart # The `nib` skill baked into the binary, so Nib can explain itself
+│   ├── updater.dart        # `nib update` self-updater
 │   ├── undo_manager.dart   # Snapshot tracker powering one-click /undo
 │   ├── approval_manager.dart# Interactive tool confirmation checks (/confirm)
 │   └── tool.dart           # AgentTool interface & schema builders
@@ -34,12 +37,15 @@ lib/
 │   ├── search_files_tool.dart# Regex & pattern search across files
 │   ├── skill_tool.dart     # Load full instructions of named agent skills
 │   ├── web_search_tool.dart# Web search via configurable provider (Exa API)
+│   ├── search_provider.dart# Web search provider options
 │   └── web_fetch_tool.dart # URL fetcher converting web pages to clean markdown
 └── ui/                     # Terminal CLI UI layer
     ├── ansi.dart           # ANSI colors, banners, and formatters
     ├── theme.dart          # 24-bit TrueColor theme engine (Catppuccin, Tokyo Night, Nord, Gruvbox)
     ├── cli_ui.dart         # Pure stdout streaming UI with box-drawing tool cards & multi-line input
     ├── prompt_reader.dart  # Interactive readline with Up/Down history recall & Tab completion
+    ├── provider_wizard.dart# First-run and `/setup` provider wizard
+    ├── key_binding.dart    # Default key bindings
     ├── autocomplete.dart   # Prefix & fuzzy matching for slash commands and @file mentions
     ├── diff_formatter.dart # Color unified diff generator (+green / -red)
     ├── markdown_renderer.dart# TrueColor syntax highlighter for Dart, Python, Bash, JSON, SQL, etc.
@@ -85,9 +91,13 @@ dart pub global activate --source git https://github.com/nicklisac/nib.git
 nib
 ```
 
-### Credentials & First Run
+### First Run
 
-Nib automatically detects standard provider environment variables:
+The first time you run `nib` with no provider configured, it walks you through setup: pick OpenAI-compatible or Anthropic, enter a base URL and key, and it looks up the models your endpoint offers. It also asks which web search provider to use, and you can skip that and set it up later (just ask Nib). Run it again any time with `nib setup` or `/setup`.
+
+Local and self-hosted servers don't need a key, so leave it blank. Your choices are saved to `~/.nib/config.json`.
+
+Or skip the wizard and set a standard provider environment variable. Nib detects them automatically:
 
 ```bash
 # Anthropic Claude (Messages API)
@@ -177,6 +187,8 @@ Repeating a command whose output changed (polling a build, watching a log) count
 
 Nib loads skills from two places only: `<workspace>/.nib/skills/<name>/SKILL.md` and `~/.nib/skills/<name>/SKILL.md`. Skills belonging to other agent harnesses are deliberately not imported.
 
+One skill ships inside Nib itself: `nib`. It covers the config file, slash commands, flags, providers and search setup, so on a fresh machine you can just ask Nib how it works or to help configure itself. If you want to build or change Nib, the project's own docs ([`docs/feel.md`](docs/feel.md), [`docs/adr/`](docs/adr), [`CONTEXT.md`](CONTEXT.md)) live in this repo.
+
 Only a name and description index is injected into the system prompt (a few hundred tokens rather than every skill body). The model fetches a full body on demand with the `skill` tool, and reads a skill's companion files the same way via `file`, since global skills live outside the workspace where `read_file` cannot reach them.
 
 A skill with `disable-model-invocation: true` in its frontmatter is hidden from the model entirely. Invoke those yourself with `/skills run <name> [instructions]`.
@@ -189,14 +201,14 @@ A skill with `disable-model-invocation: true` in its frontmatter is hidden from 
 - **Tab Autocomplete**: Tab key completes `/slash` commands and `@file` workspace paths.
 - **Tau-Style Context Compaction**: Auto-compacts conversation history above threshold or on-demand (`/compact`), generating structured goal/progress checkpoints while keeping recent turns intact.
 - **Context Guardrails**: Automatically caps oversized tool outputs (e.g. huge file reads or command dumps) to prevent exhausting VRAM or model context.
-- **TrueColor Themes**: Switch between Catppuccin Mocha, Tokyo Night, Nord, and Gruvbox Dark anytime (`/theme tokyonight`).
+- **TrueColor Themes**: Switch between Catppuccin Mocha, Tokyo Night, Nord, Gruvbox, Dracula, Rosé Pine, One Dark, Monokai, Kanagawa, Everforest, Solarized, GitHub Dark and Synthwave anytime (`/theme tokyonight`).
 - **Markdown Tables**: Automatically parses GitHub-flavored markdown tables into Unicode rounded box-grid tables with column alignments (`:---:`, `---:`).
 - **Multi-Language Syntax Highlighting**: Colorizes Dart, Python, Bash, JS/TS, SQL, JSON inside code block boxes (`╭─ dart ──╮`).
 - **Unified Diff Highlighting**: `edit_file` renders colored diffs with red `-` deletions and green `+` additions.
-- **Graceful Turn Cancellation**: Pressing `Ctrl+C` while a model is streaming or a tool is running aborts *only the active turn* and returns to `nib ❯ `.
+- **Graceful Turn Cancellation**: Pressing `Esc` or `Ctrl+C` while a model is streaming or a tool is running aborts *only the active turn*. Anything you had typed is kept.
 - **One-Click Reverts (`/undo`)**: Undo any file change made by Nib with `/undo`.
 - **Interactive Tool Confirmations (`/confirm`)**: Prompts before writing files or running destructive bash commands (`rm`, `git reset`).
-- **Multi-Line & Code Paste**: Wrap multi-line prompts in `"""` or end lines with `\` for prompt continuation.
+- **Multi-Line & Code Paste**: Pasting never sends. Wrap multi-line prompts in `"""`, end lines with `\`, or press `Ctrl+J` for a new line.
 - **Session Durability**: Conversations are saved as JSONL to `~/.nib/sessions/` and can be inspected (`/sessions`) or resumed (`/resume`).
 
 ---
@@ -206,19 +218,49 @@ A skill with `disable-model-invocation: true` in its frontmatter is hidden from 
 - `/help` - Show all available commands
 - `/undo` - Revert the last file change made by Nib
 - `/compact [focus]` - Compact older conversation entries into structured checkpoint (Tau-style)
-- `/theme [name]` - Switch TrueColor theme (`catppuccin`, `tokyonight`, `nord`, `gruvbox`)
+- `/theme [name]` - Switch TrueColor theme (try `/theme` for the full list)
+- `/thinking [level]` - Show or set the thinking level (off to max)
+- `/image [path]` - Attach an image from a path or the clipboard
 - `/confirm` - Toggle interactive tool confirmation mode
 - `/sessions` - List saved conversation transcripts
 - `/resume [id]` - Resume a previous session
 - `/config` - Show active profile, endpoints, and configured models
 - `/provider [name]` - Switch active provider
+- `/setup` - Run the provider setup wizard again
 - `/model [name]` - Display or change active model
 - `/tools` - Inspect registered tools and their parameters
 - `/skills [list|show|run|enable|disable|toggle|reload] [name]` - Manage skills. `run` invokes one directly, including skills marked `disable-model-invocation`, which the model cannot load itself
 - `/history` - Display session message count & token usage
 - `/system [prompt]` - Inspect or append to the system prompt
+- `/new` - Start a brand new session
 - `/clear` - Clear conversation history for a fresh turn
+- `/redraw` - Redraw the screen
 - `/exit` - Exit Nib
+
+---
+
+## ⌨ Keys
+
+| Key | What it does |
+| --- | --- |
+| `Esc` / `Ctrl+C` | Stop the current turn. Your draft is kept. |
+| `Ctrl+C` twice | At an empty or idle prompt, press it twice within two seconds to exit. (`Ctrl+D` on an empty line exits too.) |
+| `Enter` | Send. On an empty line, sends the message you queued. |
+| `Alt+Enter` | Queue what you typed while a turn is running. |
+| `Ctrl+J` | New line instead of sending. |
+| `Ctrl+V` | Paste (text or an image from the clipboard). |
+| `Tab` | Complete a `/command` or `@file`. |
+| `↑` / `↓` | Step through previous prompts. |
+| `Ctrl+A` / `Ctrl+E` | Jump to the start / end of the line. |
+| `Ctrl+U` | Delete from the start of the line to the cursor. |
+| `Ctrl+W` | Delete the previous word. |
+| `Alt+←` / `Alt+→` | Move by word. |
+| `Shift+Tab` | Cycle the thinking level. |
+| `Ctrl+T` | Show or hide the thinking trace. |
+| `Ctrl+O` | Switch tool output between compact and expanded. |
+| `Ctrl+R` | Open the session picker. |
+| `Ctrl+P` | Cycle through your configured models. |
+| `Ctrl+L` | Redraw the screen. |
 
 ---
 
