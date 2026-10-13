@@ -7,6 +7,14 @@ import 'terminal_manager.dart';
 import 'theme.dart';
 import 'transcript_writer.dart';
 
+class DiscoveredModel {
+  final String id;
+  final int? contextWindow;
+  final int? maxTokens;
+
+  const DiscoveredModel({required this.id, this.contextWindow, this.maxTokens});
+}
+
 class ProtocolOption {
   final String id; // 'openai' or 'anthropic'
   final String label;
@@ -141,13 +149,54 @@ class ProviderSetupWizard {
     );
 
     // 4. Model selection (query API if possible, else prompt)
-    final model = await _selectOrInputModel(
+    final modelInfo = await _selectOrInputModel(
       protocol: chosen.id,
       baseUrl: baseUrl,
       apiKey: apiKey,
       theme: theme,
       out: out,
     );
+    final model = modelInfo.id;
+
+    // 5. Optional Advanced Settings (Enter to accept/skip)
+    out.writeLine('');
+    out.writeLine(
+      theme.muted.text(
+        '  Optional Settings (Press Enter to keep default / skip):',
+      ),
+    );
+
+    final defaultCtxStr = modelInfo.contextWindow != null
+        ? '${modelInfo.contextWindow}'
+        : '';
+    final ctxPrompt = defaultCtxStr.isNotEmpty
+        ? '  Context window [$defaultCtxStr]: '
+        : '  Context window (e.g. 131072, Enter to skip): ';
+    final ctxInput = await _readLineInput(
+      prompt: ctxPrompt,
+      defaultValue: defaultCtxStr,
+    );
+    final contextWindow = int.tryParse(ctxInput);
+
+    final defaultMaxStr = modelInfo.maxTokens != null
+        ? '${modelInfo.maxTokens}'
+        : '';
+    final maxTokensPrompt = defaultMaxStr.isNotEmpty
+        ? '  Max output tokens [$defaultMaxStr]: '
+        : '  Max output tokens (e.g. 8192, Enter to skip): ';
+    final maxTokensInput = await _readLineInput(
+      prompt: maxTokensPrompt,
+      defaultValue: defaultMaxStr,
+    );
+    final maxTokens = int.tryParse(maxTokensInput);
+
+    final imgInput = await _readLineInput(
+      prompt: '  Supports images / vision? (y/N, Enter to skip): ',
+      defaultValue: '',
+    );
+    final bool? supportsImages = imgInput.toLowerCase().startsWith('y')
+        ? true
+        : (imgInput.toLowerCase().startsWith('n') ? false : null);
 
     final config = existingConfig ?? await NibConfig.load();
     config.defaultProvider = providerName;
@@ -159,6 +208,9 @@ class ProviderSetupWizard {
       baseUrl: baseUrl,
       apiKey: apiKey,
       protocol: chosen.id,
+      contextWindow: contextWindow,
+      maxTokens: maxTokens,
+      supportsImages: supportsImages,
     );
     config.providers[providerName] = provConfig;
 
@@ -170,9 +222,18 @@ class ProviderSetupWizard {
         '  ✔ Saved provider "$providerName" to ~/.nib/config.json!',
       ),
     );
-    stdout.writeln(
-      '  Active: ${theme.accent.text(providerName)} | Model: ${theme.accent.text(model)} | Endpoint: ${theme.muted.text(baseUrl)}',
-    );
+    final details = [
+      'Active: ${theme.accent.text(providerName)}',
+      'Model: ${theme.accent.text(model)}',
+      if (contextWindow != null)
+        'Ctx: ${theme.secondary.text('$contextWindow')}',
+      if (maxTokens != null) 'MaxTokens: ${theme.secondary.text('$maxTokens')}',
+      if (supportsImages != null)
+        'Images: ${theme.secondary.text(supportsImages ? "yes" : "no")}',
+    ].join(' | ');
+
+    stdout.writeln('  $details');
+    stdout.writeln('  Endpoint: ${theme.muted.text(baseUrl)}');
     stdout.writeln();
 
     return config;
@@ -303,7 +364,7 @@ class ProviderSetupWizard {
     }
   }
 
-  static Future<String> _selectOrInputModel({
+  static Future<DiscoveredModel> _selectOrInputModel({
     required String protocol,
     required String baseUrl,
     required String apiKey,
@@ -345,9 +406,9 @@ class ProviderSetupWizard {
                 break;
               case ControlCharacter.enter:
                 _clearModelMenu(fetched.length, out);
-                final chosenModel = fetched[selectedIndex];
-                out.writeLine('  Model: ${theme.accent.text(chosenModel)}');
-                return chosenModel;
+                final chosen = fetched[selectedIndex];
+                out.writeLine('  Model: ${theme.accent.text(chosen.id)}');
+                return chosen;
               case ControlCharacter.ctrlC:
               case ControlCharacter.escape:
                 _clearModelMenu(fetched.length, out);
@@ -360,9 +421,9 @@ class ProviderSetupWizard {
             final numVal = int.tryParse(char);
             if (numVal != null && numVal >= 1 && numVal <= fetched.length) {
               _clearModelMenu(fetched.length, out);
-              final chosenModel = fetched[numVal - 1];
-              out.writeLine('  Model: ${theme.accent.text(chosenModel)}');
-              return chosenModel;
+              final chosen = fetched[numVal - 1];
+              out.writeLine('  Model: ${theme.accent.text(chosen.id)}');
+              return chosen;
             }
           }
         }
@@ -372,11 +433,15 @@ class ProviderSetupWizard {
         theme.muted.text('(could not auto-fetch models from /models)'),
       );
       out.writeLine('');
-      return await _readLineInput(prompt: '  Model name: ', defaultValue: '');
+      final name = await _readLineInput(
+        prompt: '  Model name: ',
+        defaultValue: '',
+      );
+      return DiscoveredModel(id: name);
     }
   }
 
-  static Future<List<String>> _fetchModels({
+  static Future<List<DiscoveredModel>> _fetchModels({
     required String protocol,
     required String baseUrl,
     required String apiKey,
@@ -415,19 +480,42 @@ class ProviderSetupWizard {
         final decoded = jsonDecode(res.body);
         if (decoded is Map<String, dynamic> && decoded['data'] is List) {
           final list = decoded['data'] as List;
-          final modelIds = list
-              .map((item) {
-                if (item is Map<String, dynamic>) {
-                  return item['id'] as String?;
+          final models = <DiscoveredModel>[];
+          for (final item in list) {
+            if (item is Map<String, dynamic>) {
+              final id = item['id'] as String?;
+              if (id != null && id.isNotEmpty) {
+                int? ctx;
+                int? maxOut;
+                // Parse context window if available from provider (tabbyAPI, vLLM, ollama, etc.)
+                if (item['context_length'] is num) {
+                  ctx = (item['context_length'] as num).toInt();
+                } else if (item['max_model_len'] is num) {
+                  ctx = (item['max_model_len'] as num).toInt();
+                } else if (item['meta'] is Map &&
+                    item['meta']['n_ctx_train'] is num) {
+                  ctx = (item['meta']['n_ctx_train'] as num).toInt();
                 }
-                return null;
-              })
-              .whereType<String>()
-              .where((id) => id.isNotEmpty)
-              .toList();
 
-          if (modelIds.isNotEmpty) {
-            return modelIds;
+                if (item['max_tokens'] is num) {
+                  maxOut = (item['max_tokens'] as num).toInt();
+                } else if (item['max_output_tokens'] is num) {
+                  maxOut = (item['max_output_tokens'] as num).toInt();
+                }
+
+                models.add(
+                  DiscoveredModel(
+                    id: id,
+                    contextWindow: ctx,
+                    maxTokens: maxOut,
+                  ),
+                );
+              }
+            }
+          }
+
+          if (models.isNotEmpty) {
+            return models;
           }
         }
       }
@@ -436,7 +524,7 @@ class ProviderSetupWizard {
   }
 
   static void _renderModelMenu(
-    List<String> models,
+    List<DiscoveredModel> models,
     int selected,
     NibTheme theme,
     TranscriptWriter out,
@@ -450,12 +538,18 @@ class ProviderSetupWizard {
       final pointer = isSelected ? theme.accent.text('▸') : ' ';
       final indexStr = theme.secondary.text('[${i + 1}]');
 
+      final ctxTag = m.contextWindow != null
+          ? ' ${theme.muted.text('(${m.contextWindow} ctx)')}'
+          : '';
+
       if (isSelected) {
         out.writeLine(
-          '    $pointer $indexStr ${theme.surface.bg}${theme.accent.text(" $m ")}\x1B[0m',
+          '    $pointer $indexStr ${theme.surface.bg}${theme.accent.text(" ${m.id} ")}\x1B[0m$ctxTag',
         );
       } else {
-        out.writeLine('    $pointer $indexStr ${theme.primary.text(m)}');
+        out.writeLine(
+          '    $pointer $indexStr ${theme.primary.text(m.id)}$ctxTag',
+        );
       }
     }
     out.writeLine('  ${theme.muted.text('╰──${'─' * 45}')}');
