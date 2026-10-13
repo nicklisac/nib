@@ -6,6 +6,22 @@ Nib is not a windowed TUI or full-screen GUI—it is a pure terminal streaming C
 
 ---
 
+## 💭 Why Nib?
+
+**The name.** A nib is the tip of a pen, the small part that actually touches the page. That's the idea here: a small tool that does the writing and little else. It also nods to Pi and Tau, which are short names for small agents, and it's why the prompt is a ✒.
+
+**Why Dart.** Dart is an underrated language for command-line tools:
+
+- **One file to install.** It compiles to a standalone binary, so there's no Node, Python or package manager to set up first.
+- **Starts instantly.** It launches in a fraction of a second, which matters for something you open and close all day.
+- **Good at streaming.** Async and streams are built into the language, which suits a program whose main job is reading tokens as they arrive.
+- **Hard to break quietly.** Static types and null safety catch a lot of mistakes before they ever run.
+- **Runs anywhere.** Linux, macOS and Windows from the same code.
+
+**What this is.** Nib is a personal and research project: a place to explore how a coding agent should feel to use, and what's the least it needs to be useful. It's built in the open, and anyone is welcome to use it, fork it or borrow ideas from it.
+
+---
+
 ## 🏛 Architecture
 
 ```
