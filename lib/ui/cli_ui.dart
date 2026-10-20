@@ -11,6 +11,7 @@ import '../ai/image_attachment.dart';
 import 'ambient_line.dart';
 import 'ansi.dart';
 import 'autocomplete.dart';
+import 'herdr_integration.dart';
 import 'key_binding.dart';
 import 'markdown_renderer.dart';
 import 'prompt_reader.dart';
@@ -135,6 +136,7 @@ class CliUi {
     // The approval prompt *steals* the keys rather than contending for them, and
     // the half-composed draft is held meanwhile rather than dropped.
     ApprovalManager.instance.onApprovalStart = () async {
+      HerdrIntegration.instance.reportBlocked('Approval required');
       // Only wait on a reader that actually exists: no window has run yet at the
       // first approval of a session, and awaiting a completer nobody completes
       // would hang the prompt.
@@ -144,6 +146,7 @@ class CliUi {
       _ambient.hide();
     };
     ApprovalManager.instance.onApprovalEnd = () {
+      HerdrIntegration.instance.reportWorking();
       // Still inside the same tool execution, so the human still owns the row.
       if (_isExecutingTurn && !_turnInterrupted) _startTurnInput();
     };
@@ -201,6 +204,7 @@ class CliUi {
       }
 
       _ambient.showIdle();
+      HerdrIntegration.instance.reportIdle(withResume: true);
 
       while (true) {
         final theme = NibTheme.current;
@@ -247,6 +251,7 @@ class CliUi {
         if (trimmed.isEmpty && !hasAttachments) {
           if (submitted.kind == SubmitKind.flushQueue) {
             await _submitQueued(showDock: false);
+            HerdrIntegration.instance.reportIdle();
           }
           continue;
         }
@@ -271,6 +276,7 @@ class CliUi {
             }
             await _executeAgentTurn(invocation);
             await _afterTurn();
+            HerdrIntegration.instance.reportIdle();
           }
           continue;
         }
@@ -317,8 +323,10 @@ class CliUi {
         // Execute agent turn with live streaming callbacks
         await _executeAgentTurn(expandedPrompt, images: attachments);
         await _afterTurn();
+        HerdrIntegration.instance.reportIdle();
       }
     } finally {
+      HerdrIntegration.instance.release();
       ScreenCoordinator.instance.deactivate();
       resizeDebounce?.cancel();
       await sigwinchSub?.cancel();
@@ -519,10 +527,15 @@ class CliUi {
   /// Runs a single turn with the given prompt.
   Future<void> runWithPrompt(String prompt) async {
     _setupSigintHandler();
-    final imageExtraction = await ImageAttachment.extractFromPrompt(prompt);
-    final expandedPrompt = await AutoCompleter.expandFileMentions(prompt);
-    await _executeAgentTurn(expandedPrompt, images: imageExtraction.images);
-    await _sigintSub?.cancel();
+    try {
+      HerdrIntegration.instance.reportWorking();
+      final imageExtraction = await ImageAttachment.extractFromPrompt(prompt);
+      final expandedPrompt = await AutoCompleter.expandFileMentions(prompt);
+      await _executeAgentTurn(expandedPrompt, images: imageExtraction.images);
+    } finally {
+      HerdrIntegration.instance.release();
+      await _sigintSub?.cancel();
+    }
   }
 
   /// Writes a line of transcript output, clearing the ambient row first and
@@ -623,6 +636,7 @@ class CliUi {
     _turnInterrupted = false;
     _inThoughtBlock = false;
     _isExecutingTurn = true;
+    HerdrIntegration.instance.reportWorking();
     final theme = NibTheme.current;
     final markdownPrinter = StreamingMarkdownPrinter(
       theme: theme,

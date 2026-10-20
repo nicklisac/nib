@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dart_console/dart_console.dart';
+import 'herdr_integration.dart';
 import 'screen_coordinator.dart';
 
 /// Bracketed paste mode (DEC 2004). Terminals that honour it wrap a paste in
@@ -254,6 +255,9 @@ class TerminalManager {
 
   /// Disposes stdin listeners and restores cooked mode.
   void dispose() {
+    try {
+      HerdrIntegration.instance.release();
+    } catch (_) {}
     disableRawMode();
     _stdinSub?.cancel();
     _stdinSub = null;
