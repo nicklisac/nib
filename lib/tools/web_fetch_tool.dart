@@ -13,6 +13,9 @@ class WebFetchTool extends AgentTool {
   String get name => 'web_fetch';
 
   @override
+  bool get readOnly => true;
+
+  @override
   String get description =>
       'Fetches the text content of a public web page at a given URL, converting HTML into clean Markdown. Blocks access to private and local network addresses.';
 

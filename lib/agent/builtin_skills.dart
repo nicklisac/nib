@@ -29,6 +29,9 @@ Nib loads configuration from `.nib/config.json` in the current workspace, or `~/
   "context_window": 128000,
   "max_tokens": 4096,
   "thinking_level": "medium",
+  "experiments": {
+    "rewind_reads": false
+  },
   "providers": {
     "openai": {
       "name": "openai",

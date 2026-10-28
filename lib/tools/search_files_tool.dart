@@ -13,6 +13,9 @@ class SearchFilesTool extends AgentTool {
   String get name => 'search_files';
 
   @override
+  bool get readOnly => true;
+
+  @override
   String get description =>
       'Search for regex patterns or literal text across files in the workspace directory.';
 

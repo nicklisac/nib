@@ -668,6 +668,15 @@ class SlashCommandHandler {
         );
       }
     }
+    if (config != null && config!.experiments.isNotEmpty) {
+      _writeln('\n${Ansi.boldText('Experiments:')}');
+      for (final entry in config!.experiments.entries) {
+        final state = entry.value
+            ? Ansi.greenText('enabled')
+            : Ansi.grayText('disabled');
+        _writeln('  • ${Ansi.cyanText(entry.key)}: $state');
+      }
+    }
     _writeln();
   }
 
@@ -742,6 +751,15 @@ class SlashCommandHandler {
     _writeln('  Session ID:         ${Ansi.cyanText(session.id)}');
     _writeln('  Total messages:     ${msgs.length}');
     _writeln('  Tool executions:    ${session.toolExecutionsCount}');
+    if (session.rewinds.isNotEmpty) {
+      final totalChars = session.rewinds.fold<int>(
+        0,
+        (sum, r) => sum + r.originalChars,
+      );
+      _writeln(
+        '  Rewound read turns: ${session.rewinds.length} (${(totalChars / 1000).toStringAsFixed(1)}k chars replaced)',
+      );
+    }
     _writeln('  Undo history depth: ${UndoManager.instance.count}');
     _writeln();
 

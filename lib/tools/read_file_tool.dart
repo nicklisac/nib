@@ -14,6 +14,9 @@ class ReadFileTool extends AgentTool {
   String get name => 'read_file';
 
   @override
+  bool get readOnly => true;
+
+  @override
   String get description =>
       'Read the contents of a file in the workspace with line numbers. Optionally specify line ranges. If an image file (PNG, JPEG, GIF, WEBP, BMP, TIFF, ICO) is specified, loads and inspects the image for vision-capable models.';
 

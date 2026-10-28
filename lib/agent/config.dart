@@ -137,6 +137,11 @@ class NibConfig {
   final int maxStuckIterations;
   final int hardIterationCap;
   final Map<String, dynamic> keybindings;
+
+  /// Per-experiment opt-in flags (e.g. `{"rewind_reads": true}`). Disabled by
+  /// default so unpromoted experiments add zero startup overhead and zero
+  /// prompt tokens (#36, #41, #53).
+  final Map<String, bool> experiments;
   String? searchProvider;
   String? searchApiKey;
 
@@ -161,11 +166,16 @@ class NibConfig {
     this.maxStuckIterations = 5,
     this.hardIterationCap = 200,
     Map<String, dynamic>? keybindings,
+    Map<String, bool>? experiments,
     this.searchProvider,
     this.searchApiKey,
     this.thinkingLevel,
   }) : providers = providers ?? {},
-       keybindings = keybindings ?? {};
+       keybindings = keybindings ?? {},
+       experiments = experiments ?? {};
+
+  /// True when the named experiment flag is explicitly enabled in config.
+  bool isExperimentEnabled(String name) => experiments[name] == true;
 
   /// Look up a provider profile by ID (case-insensitive)
   ProviderConfig? findProvider(String? id) {
@@ -255,6 +265,15 @@ class NibConfig {
               json['default_provider'] as String? ??
               (providersMap.isNotEmpty ? providersMap.keys.first : 'auto');
 
+          final experimentsMap = <String, bool>{};
+          if (json['experiments'] is Map) {
+            for (final entry in (json['experiments'] as Map).entries) {
+              if (entry.value is bool) {
+                experimentsMap[entry.key.toString()] = entry.value as bool;
+              }
+            }
+          }
+
           return NibConfig(
             defaultProvider: defProvider,
             defaultModel: json['default_model'] as String?,
@@ -270,6 +289,7 @@ class NibConfig {
             keybindings: json['keybindings'] is Map
                 ? Map<String, dynamic>.from(json['keybindings'] as Map)
                 : null,
+            experiments: experimentsMap,
             searchProvider: json['search_provider'] as String?,
             searchApiKey: json['search_api_key'] as String?,
             thinkingLevel: json['thinking_level'] as String?,
@@ -359,6 +379,7 @@ class NibConfig {
       if (maxStuckIterations != 5) 'max_stuck_iterations': maxStuckIterations,
       if (hardIterationCap != 200) 'hard_iteration_cap': hardIterationCap,
       if (keybindings.isNotEmpty) 'keybindings': keybindings,
+      if (experiments.isNotEmpty) 'experiments': experiments,
       if (searchProvider != null) 'search_provider': searchProvider,
       if (searchApiKey != null && searchApiKey!.isNotEmpty)
         'search_api_key': searchApiKey,

@@ -15,6 +15,7 @@ import 'package:nib/tools/bash_tool.dart';
 import 'package:nib/tools/edit_file_tool.dart';
 import 'package:nib/tools/list_dir_tool.dart';
 import 'package:nib/tools/read_file_tool.dart';
+import 'package:nib/tools/rewind_reads_tool.dart';
 import 'package:nib/tools/search_files_tool.dart';
 import 'package:nib/tools/skill_tool.dart';
 import 'package:nib/tools/web_fetch_tool.dart';
@@ -434,6 +435,7 @@ void main(List<String> arguments) async {
     ),
     WebFetchTool(),
     SkillTool(),
+    if (config.isExperimentEnabled(RewindReadsTool.toolName)) RewindReadsTool(),
   ];
 
   // The active provider wins over the top-level values: loop ceilings and the

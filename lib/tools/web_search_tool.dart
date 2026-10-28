@@ -19,6 +19,9 @@ class WebSearchTool extends AgentTool {
   String get name => 'web_search';
 
   @override
+  bool get readOnly => true;
+
+  @override
   String get description =>
       'Performs a web search to find current information, documentation, news, or code examples. Returns titles, URLs, and text summaries.';
 

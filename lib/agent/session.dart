@@ -4,11 +4,105 @@ import 'package:path/path.dart' as p;
 import '../ai/chat_message.dart';
 import 'skills.dart';
 
+/// Side record of a read-only turn whose tool results were rewound into a note (#53).
+///
+/// Persisted in the session JSONL (`_type: 'rewind'`) so post-hoc session
+/// debugging and telemetry retain the full pre-rewind history even though the
+/// active prompt prefix now carries only the note.
+class RewindRecord {
+  final String timestamp;
+  final List<String> toolNames;
+  final List<String> toolSummaries;
+  final int originalChars;
+  final String note;
+  final List<ChatMessage> originalToolMessages;
+
+  RewindRecord({
+    required this.timestamp,
+    required this.toolNames,
+    required this.toolSummaries,
+    required this.originalChars,
+    required this.note,
+    required this.originalToolMessages,
+  });
+
+  /// Human-readable original character count (e.g. `20.1k chars` or `850 chars`).
+  String get formattedOriginalChars => originalChars >= 1000
+      ? '${(originalChars / 1000).toStringAsFixed(1)}k chars'
+      : '$originalChars chars';
+
+  /// Estimated token count of the replacement note (`chars / 4`, rounded up).
+  int get estimatedNoteTokens => (note.length / 4).ceil();
+
+  /// Summary of the rewound tool invocations (e.g. `web_fetch https://...`).
+  String get toolsSummary => toolSummaries.isNotEmpty
+      ? toolSummaries.join(', ')
+      : toolNames.join(', ');
+
+  Map<String, dynamic> toJson() => {
+    '_type': 'rewind',
+    'timestamp': timestamp,
+    'tool_names': toolNames,
+    'tool_summaries': toolSummaries,
+    'original_chars': originalChars,
+    'note': note,
+    'original_tool_messages': originalToolMessages
+        .map((m) => m.toJson())
+        .toList(),
+  };
+
+  factory RewindRecord.fromJson(Map<String, dynamic> json) {
+    final rawMsgs = json['original_tool_messages'];
+    final origMsgs = rawMsgs is List
+        ? rawMsgs
+              .whereType<Map>()
+              .map((m) => ChatMessage.fromJson(Map<String, dynamic>.from(m)))
+              .toList()
+        : <ChatMessage>[];
+    final names =
+        (json['tool_names'] as List?)?.map((e) => e.toString()).toList() ??
+        <String>[];
+    final summaries =
+        (json['tool_summaries'] as List?)?.map((e) => e.toString()).toList() ??
+        names;
+    return RewindRecord(
+      timestamp: json['timestamp'] as String? ?? '',
+      toolNames: names,
+      toolSummaries: summaries,
+      originalChars: json['original_chars'] as int? ?? 0,
+      note: json['note'] as String? ?? '',
+      originalToolMessages: origMsgs,
+    );
+  }
+}
+
+/// Outcome of attempting to rewind the last read-only tool turn.
+sealed class RewindOutcome {}
+
+/// The rewind succeeded and the session transcript was updated in-place.
+class RewindSuccess extends RewindOutcome {
+  final RewindRecord record;
+  RewindSuccess(this.record);
+}
+
+/// The rewind was refused; [reason] explains why so the model can adjust.
+class RewindRefused extends RewindOutcome {
+  final String reason;
+  RewindRefused(this.reason);
+}
+
 /// Manages the conversation transcript, system prompt, persistence, and turns.
 class AgentSession {
+  static const String rewindToolName = 'rewind_reads';
+  static const String rewoundResultPrefix = '[Rewound read result';
+  static const String includedInRewindPrefix = '[Included in rewound note';
+  static const String rewindHintFooter =
+      '\n\n[Tip: if this output is a dead end or you only need a few facts from it, call rewind_reads to replace it with a short note.]';
+
   final String id;
   String systemPrompt;
   final List<ChatMessage> _messages = [];
+  final List<RewindRecord> _rewinds = [];
 
   /// Current prompt tokens for the active transcript (from latest provider response).
   int currentPromptTokens = 0;
@@ -43,11 +137,188 @@ class AgentSession {
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
 
+  /// Side records of read-only tool turns rewound into notes during this session.
+  List<RewindRecord> get rewinds => List.unmodifiable(_rewinds);
+
   /// True if the session has at least one user message recorded.
   bool get hasUserMessages => _messages.any((m) => m.role == Role.user);
 
   void addMessage(ChatMessage message) {
     _messages.add(message);
+  }
+
+  void addRewindRecord(RewindRecord record) {
+    _rewinds.add(record);
+  }
+
+  /// Validates and rewinds the immediately preceding tool turn in-place (#53).
+  ///
+  /// If the last message in `_messages` is the assistant turn that emitted a
+  /// sole `rewind_reads` tool call, it is popped on success so the `rewind_reads`
+  /// call itself leaves no trace in the active prompt prefix. On refusal,
+  /// `_messages` is left untouched so the harness can append the refusal tool
+  /// result normally.
+  RewindOutcome rewindLastReadTurn({
+    required String note,
+    required bool Function(String toolName) isReadOnlyTool,
+    int minChars = 1000,
+  }) {
+    final cleanNote = note.trim();
+    if (cleanNote.isEmpty) {
+      return RewindRefused(
+        'Refused rewind_reads: "note" argument is required and must state what was learned.',
+      );
+    }
+
+    int targetEndIndex = _messages.length - 1;
+    final hasTrailingRewindCall =
+        targetEndIndex >= 0 &&
+        _messages[targetEndIndex].role == Role.assistant &&
+        _messages[targetEndIndex].toolCalls != null &&
+        _messages[targetEndIndex].toolCalls!.length == 1 &&
+        _messages[targetEndIndex].toolCalls!.first.name == rewindToolName;
+
+    if (hasTrailingRewindCall) {
+      targetEndIndex--;
+    }
+
+    // Walk backwards across the contiguous Role.tool messages of the target turn.
+    int i = targetEndIndex;
+    while (i >= 0 && _messages[i].role == Role.tool) {
+      i--;
+    }
+
+    if (i + 1 > targetEndIndex ||
+        i < 0 ||
+        _messages[i].role != Role.assistant) {
+      return RewindRefused(
+        'Refused rewind_reads: there is no immediately preceding tool turn to rewind.',
+      );
+    }
+
+    final targetAssistantMsg = _messages[i];
+    final targetToolMsgs = _messages.sublist(i + 1, targetEndIndex + 1);
+
+    for (final msg in targetToolMsgs) {
+      final text = msg.content ?? '';
+      if (text.startsWith(rewoundResultPrefix) ||
+          text.startsWith(includedInRewindPrefix)) {
+        return RewindRefused(
+          'Refused rewind_reads: the previous tool turn was already rewound.',
+        );
+      }
+    }
+
+    // Every tool call in the target assistant turn and its tool results must be read-only.
+    final assistantCalls = targetAssistantMsg.toolCalls ?? const <ToolCall>[];
+    for (final call in assistantCalls) {
+      if (!isReadOnlyTool(call.name)) {
+        return RewindRefused(
+          'Refused rewind_reads: the previous turn called non-read-only tool "${call.name}". '
+          'Only turns with exclusively read-only tools (read_file, search_files, list_dir, web_fetch, web_search, skill) can be rewound.',
+        );
+      }
+    }
+    for (final msg in targetToolMsgs) {
+      final tName = msg.toolName ?? '';
+      if (tName.isEmpty || !isReadOnlyTool(tName)) {
+        return RewindRefused(
+          'Refused rewind_reads: the previous turn called non-read-only tool "${tName.isEmpty ? 'unknown' : tName}". '
+          'Only turns with exclusively read-only tools (read_file, search_files, list_dir, web_fetch, web_search, skill) can be rewound.',
+        );
+      }
+    }
+
+    int totalChars = 0;
+    for (final msg in targetToolMsgs) {
+      var text = msg.content ?? '';
+      if (text.endsWith(rewindHintFooter)) {
+        text = text.substring(0, text.length - rewindHintFooter.length);
+      }
+      totalChars += text.length;
+      if (msg.images != null) {
+        for (final img in msg.images!) {
+          totalChars += img.base64Data.length;
+        }
+      }
+    }
+
+    if (totalChars < minChars) {
+      return RewindRefused(
+        'Refused rewind_reads: previous tool output is only $totalChars chars '
+        '(minimum is $minChars chars). Only rewind large read results where the context savings outweigh the turn cost.',
+      );
+    }
+
+    // Pop the trailing rewind_reads assistant message if present.
+    if (hasTrailingRewindCall) {
+      _messages.removeLast();
+    }
+
+    final toolNames = assistantCalls.isNotEmpty
+        ? assistantCalls.map((c) => c.name).toList()
+        : targetToolMsgs.map((m) => m.toolName ?? 'tool').toList();
+    final toolSummaries = assistantCalls.isNotEmpty
+        ? assistantCalls.map(_summarizeToolCall).toList()
+        : toolNames;
+
+    final record = RewindRecord(
+      timestamp: DateTime.now().toIso8601String(),
+      toolNames: toolNames,
+      toolSummaries: toolSummaries,
+      originalChars: totalChars,
+      note: cleanNote,
+      originalToolMessages: List<ChatMessage>.unmodifiable(targetToolMsgs),
+    );
+    _rewinds.add(record);
+
+    final firstMsg = _messages[i + 1];
+    _messages[i + 1] = ChatMessage.toolResult(
+      toolCallId: firstMsg.toolCallId ?? '',
+      toolName: firstMsg.toolName ?? '',
+      content:
+          '$rewoundResultPrefix (${record.formattedOriginalChars}) -> note]: $cleanNote',
+    );
+
+    for (int j = i + 2; j <= targetEndIndex; j++) {
+      final sibling = _messages[j];
+      _messages[j] = ChatMessage.toolResult(
+        toolCallId: sibling.toolCallId ?? '',
+        toolName: sibling.toolName ?? '',
+        content:
+            '$includedInRewindPrefix on ${firstMsg.toolName ?? 'tool'} (${firstMsg.toolCallId ?? ''})]',
+      );
+    }
+
+    return RewindSuccess(record);
+  }
+
+  static String _summarizeToolCall(ToolCall call) {
+    final args = call.arguments;
+    switch (call.name) {
+      case 'read_file':
+      case 'list_dir':
+        final path = _shortArg(args['path'] ?? '.');
+        return '${call.name} $path';
+      case 'search_files':
+      case 'web_search':
+        final query = _shortArg(args['query'] ?? '');
+        return '${call.name} "$query"';
+      case 'web_fetch':
+        final url = _shortArg(args['url'] ?? '');
+        return 'web_fetch $url';
+      case 'skill':
+        final name = _shortArg(args['name'] ?? '');
+        return 'skill $name';
+      default:
+        return call.name;
+    }
+  }
+
+  static String _shortArg(Object? value, {int maxLen = 40}) {
+    final str = (value?.toString() ?? '').replaceAll('\n', ' ').trim();
+    if (str.length <= maxLen) return str;
+    return '${str.substring(0, maxLen - 3)}...';
   }
 
   /// Creates a fresh session initialized with current system prompt and workspace.
@@ -80,6 +351,7 @@ class AgentSession {
 
   void clearHistory() {
     _messages.clear();
+    _rewinds.clear();
     currentPromptTokens = 0;
     cachedPromptTokens = 0;
     cumulativePromptTokens = 0;
@@ -180,6 +452,11 @@ class AgentSession {
         sink.writeln(jsonEncode(msg.toJson()));
       }
 
+      // Write side records of rewound read turns
+      for (final rewind in _rewinds) {
+        sink.writeln(jsonEncode(rewind.toJson()));
+      }
+
       await sink.flush();
       await sink.close();
     } catch (_) {}
@@ -235,6 +512,8 @@ class AgentSession {
           session.totalCompletionTokens =
               json['completion_tokens'] as int? ?? 0;
           session.toolExecutionsCount = json['tool_executions'] as int? ?? 0;
+        } else if (json['_type'] == 'rewind') {
+          session?.addRewindRecord(RewindRecord.fromJson(json));
         } else if (session != null) {
           session.addMessage(ChatMessage.fromJson(json));
         }

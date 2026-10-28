@@ -729,6 +729,22 @@ class CliUi {
             .trim();
         if (clean.isNotEmpty) _ambient.showToolProgress(clean);
       },
+      onRewind: (record) {
+        markdownPrinter.flush();
+        if (_inThoughtBlock) {
+          _writeLine('');
+          _writeLine('');
+          _inThoughtBlock = false;
+        }
+        currentThoughtBuffer.clear();
+        currentTextBuffer.clear();
+        final line =
+            '  ${theme.muted.text('~ rewound ${record.formattedOriginalChars} (${record.toolsSummary}) -> ~${record.estimatedNoteTokens}-token note')}';
+        _renderModel.add(StatusBlock(line));
+        _writeLine(line);
+        _writeLine('');
+        _ambient.resumeStreaming();
+      },
       onError: (error) {
         markdownPrinter.flush();
         if (_inThoughtBlock) {

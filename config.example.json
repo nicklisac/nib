@@ -74,5 +74,8 @@
   "thinking_level": "medium",
   "max_turns": 0,
   "max_stuck_iterations": 5,
-  "hard_iteration_cap": 200
+  "hard_iteration_cap": 200,
+  "experiments": {
+    "rewind_reads": false
+  }
 }

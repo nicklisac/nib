@@ -36,6 +36,13 @@ abstract class AgentTool {
   /// JSON Schema parameters object defining required & optional arguments.
   Map<String, dynamic> get parameters;
 
+  /// True when the tool only reads state and never mutates the workspace or
+  /// external world. Read-only tool turns are eligible for `rewind_reads`.
+  bool get readOnly => false;
+
+  /// Minimum character floor when this tool is `rewind_reads`.
+  int get minRewindChars => 1000;
+
   /// Executes the tool with the given arguments and returns the [ToolResult].
   Future<ToolResult> execute(Map<String, dynamic> arguments);
 

@@ -19,6 +19,7 @@ class AgentCallbacks {
   final void Function(ToolCall toolCall, String result, Duration duration)?
   onToolCallFinished;
   final void Function(ToolCall toolCall, String line)? onToolProgress;
+  final void Function(RewindRecord record)? onRewind;
   final void Function(String error)? onError;
 
   AgentCallbacks({
@@ -27,6 +28,7 @@ class AgentCallbacks {
     this.onToolCallStarted,
     this.onToolCallFinished,
     this.onToolProgress,
+    this.onRewind,
     this.onError,
   });
 }
@@ -274,8 +276,46 @@ class Agent {
           .join('|');
       final resultParts = <String>[];
 
-      // Execute requested tools
-      for (int i = 0; i < toolCalls.length; i++) {
+      // Intercept `rewind_reads` when it is the sole tool call in the turn and
+      // the tool is registered on this agent (#53).
+      String? rewindRefusalReason;
+      var rewoundTurn = false;
+      if (_tools.containsKey(AgentSession.rewindToolName) &&
+          toolCalls.length == 1 &&
+          toolCalls.first.name == AgentSession.rewindToolName &&
+          !_isCancelled) {
+        final call = toolCalls.first;
+        final note = (call.arguments['note'] as String?) ?? '';
+        final minChars =
+            _tools[AgentSession.rewindToolName]?.minRewindChars ?? 1000;
+        final outcome = session.rewindLastReadTurn(
+          note: note,
+          isReadOnlyTool: (name) => _tools[name]?.readOnly ?? false,
+          minChars: minChars,
+        );
+        switch (outcome) {
+          case RewindSuccess(:final record):
+            rewoundTurn = true;
+            session.toolExecutionsCount++;
+            // Clear stale pre-rewind measured prompt tokens so the context gauge
+            // never reports the old larger window reading (Feel Doctrine Rule 4).
+            meter.reset();
+            resultParts.add('REWIND:${record.originalChars}:${record.note}');
+            if (callbacks?.onRewind != null) {
+              callbacks!.onRewind!(record);
+            } else {
+              callbacks?.onThoughtDelta?.call(
+                '\n[~ rewound ${record.formattedOriginalChars} (${record.toolsSummary}) -> ~${record.estimatedNoteTokens}-token note]\n',
+              );
+            }
+          case RewindRefused(:final reason):
+            rewindRefusalReason = reason;
+        }
+      }
+
+      // Execute requested tools (skipped when a rewind_reads call succeeded and
+      // already rewound the transcript in-place).
+      for (int i = 0; !rewoundTurn && i < toolCalls.length; i++) {
         final call = toolCalls[i];
 
         if (_isCancelled) {
@@ -303,6 +343,12 @@ class Agent {
           result = ToolResult.text(
             'Error: Unknown tool "${call.name}". Available tools: ${_tools.keys.join(', ')}',
           );
+        } else if (call.name == AgentSession.rewindToolName) {
+          final reason =
+              rewindRefusalReason ??
+              'Refused rewind_reads: rewind_reads must be the sole tool call in a turn, '
+                  'not batched with other tools (${toolCalls.map((c) => c.name).join(', ')}).';
+          result = ToolResult.text(reason);
         } else {
           try {
             result = await tool.execute(call.arguments);
@@ -350,7 +396,12 @@ class Agent {
         );
 
         // Add tool result to transcript (safely truncated if oversized)
-        final sanitizedResult = _truncateToolResult(result.content);
+        var sanitizedResult = _truncateToolResult(result.content);
+        if (_tools.containsKey(AgentSession.rewindToolName) &&
+            (tool?.readOnly ?? false) &&
+            result.content.length >= rewindHintThresholdChars) {
+          sanitizedResult = '$sanitizedResult${AgentSession.rewindHintFooter}';
+        }
         resultParts.add(sanitizedResult);
         session.addMessage(
           ChatMessage.toolResult(
@@ -406,6 +457,11 @@ class Agent {
   }
 
   static const int maxToolOutputChars = 20000;
+
+  /// Read-only tool outputs at or above this character count receive a one-line
+  /// hint reminding the model it can call `rewind_reads` if the result is a
+  /// dead end or scaffolding (#53).
+  static const int rewindHintThresholdChars = 4800;
 
   /// Whether an iteration ceiling has been reached. By default [maxTurns] is `0`
   /// (no per-prompt ceiling) and only [hardIterationCap] applies, which exists to

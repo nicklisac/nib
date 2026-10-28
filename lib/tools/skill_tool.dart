@@ -18,6 +18,9 @@ class SkillTool extends AgentTool {
   String get name => 'skill';
 
   @override
+  bool get readOnly => true;
+
+  @override
   String get description =>
       'Load the full instructions of a named agent skill into the conversation. '
       'Skills are listed by name and description in the system prompt but their '

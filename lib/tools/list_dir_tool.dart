@@ -13,6 +13,9 @@ class ListDirTool extends AgentTool {
   String get name => 'list_dir';
 
   @override
+  bool get readOnly => true;
+
+  @override
   String get description =>
       'List files and subdirectories in a given directory path. Shows file types and sizes.';
 
