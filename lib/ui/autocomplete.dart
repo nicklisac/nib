@@ -35,6 +35,11 @@ class AutoCompleter {
       '/skills [show|toggle|reload] [name]',
     ),
     SlashCommandInfo(
+      '/experiments',
+      'Interactive menu to toggle experimental features (e.g. rewind_reads)',
+      '/experiments [list|toggle|enable|disable] [name]',
+    ),
+    SlashCommandInfo(
       '/compact',
       'Compact conversation context (Tau-style)',
       '/compact [focus]',

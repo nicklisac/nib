@@ -116,8 +116,25 @@ class ProviderConfig {
   };
 }
 
+/// Metadata describing an opt-in experimental harness feature.
+class ExperimentSpec {
+  final String id;
+  final String description;
+
+  const ExperimentSpec({required this.id, required this.description});
+}
+
 /// Manages Nib configuration loaded from ~/.nib/config.json (or ~/.tart / ~/.tau config fallback).
 class NibConfig {
+  /// Built-in catalog of experimental features available to toggle via `/experiments`.
+  static const List<ExperimentSpec> knownExperiments = [
+    ExperimentSpec(
+      id: 'rewind_reads',
+      description:
+          'Replace dead-end read-only tool turns with a short note (context neuralizer)',
+    ),
+  ];
+
   String defaultProvider;
   String? defaultModel;
   final Map<String, ProviderConfig> providers;
@@ -155,6 +172,10 @@ class NibConfig {
 
   final String? thinkingLevel;
 
+  /// Path of the config file this instance was loaded from (if any), so
+  /// in-session mutations (like `/experiments`) save back to the same file.
+  String? loadedFromPath;
+
   NibConfig({
     this.defaultProvider = 'auto',
     this.defaultModel,
@@ -170,6 +191,7 @@ class NibConfig {
     this.searchProvider,
     this.searchApiKey,
     this.thinkingLevel,
+    this.loadedFromPath,
   }) : providers = providers ?? {},
        keybindings = keybindings ?? {},
        experiments = experiments ?? {};
@@ -293,6 +315,7 @@ class NibConfig {
             searchProvider: json['search_provider'] as String?,
             searchApiKey: json['search_api_key'] as String?,
             thinkingLevel: json['thinking_level'] as String?,
+            loadedFromPath: configPath,
           );
         } catch (_) {
           // Try next candidate
@@ -360,13 +383,14 @@ class NibConfig {
     );
   }
 
-  /// Saves the current config to ~/.nib/config.json
+  /// Saves the current config to [customPath], [loadedFromPath], or ~/.nib/config.json.
   Future<void> save({String? customPath}) async {
     final home =
         Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
         '';
-    final targetPath = customPath ?? p.join(home, '.nib', 'config.json');
+    final targetPath =
+        customPath ?? loadedFromPath ?? p.join(home, '.nib', 'config.json');
     final file = File(targetPath);
     await file.parent.create(recursive: true);
 

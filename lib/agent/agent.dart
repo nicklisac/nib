@@ -104,6 +104,12 @@ class Agent {
     _tools[tool.name] = tool;
   }
 
+  void unregisterTool(String name) {
+    _tools.remove(name);
+  }
+
+  bool hasTool(String name) => _tools.containsKey(name);
+
   List<AgentTool> get tools => _tools.values.toList();
   bool _isCancelled = false;
   StreamSubscription? _activeStreamSub;

@@ -12,7 +12,9 @@ import '../ai/anthropic_provider.dart';
 import '../ai/image_attachment.dart';
 import '../ai/mock_provider.dart';
 import '../ai/openai_provider.dart';
+import '../tools/rewind_reads_tool.dart';
 import 'ansi.dart';
+import 'experiment_picker.dart';
 import 'markdown_renderer.dart';
 import 'provider_wizard.dart';
 import 'session_picker.dart';
@@ -122,6 +124,11 @@ class SlashCommandHandler {
         await _handleSkills(args);
         return true;
 
+      case '/experiments':
+      case '/experiment':
+        await _handleExperiments(args);
+        return true;
+
       case '/history':
         _showHistory();
         return true;
@@ -215,6 +222,9 @@ class SlashCommandHandler {
     );
     _writeln(
       '  ${Ansi.cyanText('/skills [cmd]')}     Inspect and toggle modular agent skills (list, show, toggle, reload)',
+    );
+    _writeln(
+      '  ${Ansi.cyanText('/experiments')}      Interactive menu to toggle experimental features in-session',
     );
     _writeln(
       '  ${Ansi.cyanText('/config')}           Display active configuration & endpoints',
@@ -576,6 +586,148 @@ class SlashCommandHandler {
     if (mutated) await SkillsManager.instance.saveOverrides();
   }
 
+  bool _isExperimentEnabled(String id) {
+    if (id == RewindReadsTool.toolName) {
+      return agent.hasTool(RewindReadsTool.toolName);
+    }
+    return config?.isExperimentEnabled(id) ?? false;
+  }
+
+  Future<void> _setExperimentState(String id, bool enabled) async {
+    if (id == RewindReadsTool.toolName) {
+      if (enabled) {
+        if (!agent.hasTool(RewindReadsTool.toolName)) {
+          agent.registerTool(RewindReadsTool());
+        }
+      } else {
+        agent.unregisterTool(RewindReadsTool.toolName);
+      }
+    }
+    if (config != null) {
+      config!.experiments[id] = enabled;
+      final canSaveDefault =
+          AgentSession.enableDiskPersistence &&
+          AgentSession.storageDirectoryOverride == null;
+      if (config!.loadedFromPath != null || canSaveDefault) {
+        try {
+          await config!.save();
+        } catch (_) {}
+      }
+    }
+  }
+
+  void _printExperimentsList() {
+    final theme = NibTheme.current;
+    _writeln();
+    _writeln(Ansi.boldText('Experimental Features:'));
+    for (final exp in NibConfig.knownExperiments) {
+      final active = _isExperimentEnabled(exp.id);
+      final badge = active
+          ? theme.success.text('[enabled] ')
+          : theme.muted.text('[disabled]');
+      _writeln(
+        '  $badge ${theme.accent.text(exp.id.padRight(16))} ${theme.muted.text(exp.description)}',
+      );
+    }
+    _writeln(
+      '\n  ${theme.muted.text('Commands: /experiments | /experiments toggle <name> | /experiments enable|disable <name>')}',
+    );
+    _writeln();
+  }
+
+  Future<void> _handleExperiments(List<String> args) async {
+    final theme = NibTheme.current;
+
+    if (args.isEmpty) {
+      if (stdin.hasTerminal) {
+        final toggled = await ExperimentPicker.pickExperiments(
+          isEnabled: _isExperimentEnabled,
+          onToggle: (id) async {
+            final nextState = !_isExperimentEnabled(id);
+            await _setExperimentState(id, nextState);
+          },
+          writer: _out,
+        );
+        if (toggled != null && toggled.isNotEmpty) {
+          for (final id in toggled.toSet()) {
+            final nowEnabled = _isExperimentEnabled(id);
+            final stateStr = nowEnabled
+                ? theme.success.text('ENABLED')
+                : theme.muted.text('DISABLED');
+            _writeln(
+              '  ✔ Experiment ${theme.accent.text(id)} is now $stateStr.',
+            );
+          }
+        }
+        return;
+      }
+      _printExperimentsList();
+      return;
+    }
+
+    final sub = args[0].toLowerCase().trim();
+    final target = args.length > 1 ? args[1].toLowerCase().trim() : '';
+
+    switch (sub) {
+      case 'list':
+        _printExperimentsList();
+        return;
+
+      case 'toggle':
+        if (target.isEmpty) {
+          _writeln(theme.warning.text('  Usage: /experiments toggle <name>'));
+          return;
+        }
+        await _toggleNamedExperiment(target, null);
+        return;
+
+      case 'enable':
+      case 'on':
+        if (target.isEmpty) {
+          _writeln(theme.warning.text('  Usage: /experiments enable <name>'));
+          return;
+        }
+        await _toggleNamedExperiment(target, true);
+        return;
+
+      case 'disable':
+      case 'off':
+        if (target.isEmpty) {
+          _writeln(theme.warning.text('  Usage: /experiments disable <name>'));
+          return;
+        }
+        await _toggleNamedExperiment(target, false);
+        return;
+
+      default:
+        // `/experiments rewind_reads` toggles directly if name matches
+        await _toggleNamedExperiment(sub, null);
+    }
+  }
+
+  Future<void> _toggleNamedExperiment(String name, bool? forceState) async {
+    final theme = NibTheme.current;
+    final spec = NibConfig.knownExperiments
+        .where((e) => e.id.toLowerCase() == name.toLowerCase())
+        .firstOrNull;
+    if (spec == null) {
+      final available = NibConfig.knownExperiments.map((e) => e.id).join(', ');
+      _writeln(
+        theme.warning.text(
+          '  Unknown experiment "$name". Available experiments: $available',
+        ),
+      );
+      return;
+    }
+
+    final nextState = forceState ?? !_isExperimentEnabled(spec.id);
+    await _setExperimentState(spec.id, nextState);
+    final stateStr = nextState
+        ? theme.success.text('ENABLED')
+        : theme.muted.text('DISABLED');
+    _writeln('  ✔ Experiment ${theme.accent.text(spec.id)} is now $stateStr.');
+  }
+
   void _handleThinking(List<String> args) {
     if (args.isEmpty) {
       _writeln();
@@ -668,14 +820,13 @@ class SlashCommandHandler {
         );
       }
     }
-    if (config != null && config!.experiments.isNotEmpty) {
-      _writeln('\n${Ansi.boldText('Experiments:')}');
-      for (final entry in config!.experiments.entries) {
-        final state = entry.value
-            ? Ansi.greenText('enabled')
-            : Ansi.grayText('disabled');
-        _writeln('  • ${Ansi.cyanText(entry.key)}: $state');
-      }
+    _writeln('\n${Ansi.boldText('Experiments:')}');
+    for (final exp in NibConfig.knownExperiments) {
+      final active = _isExperimentEnabled(exp.id);
+      final state = active
+          ? Ansi.greenText('enabled')
+          : Ansi.grayText('disabled');
+      _writeln('  • ${Ansi.cyanText(exp.id)}: $state');
     }
     _writeln();
   }

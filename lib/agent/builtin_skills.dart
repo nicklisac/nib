@@ -92,6 +92,7 @@ Inside Nib's interactive prompt:
 - `/clear`: Clear conversation history and start a clean transcript.
 - `/undo`: Revert the last file change made by Nib.
 - `/skills`: List all active and workspace skills (`/skills show <name>`, `/skills toggle <name>`).
+- `/experiments`: Open interactive menu to toggle experimental features in-session (e.g. `/experiments toggle rewind_reads`).
 - `/sessions`: Browse and pick previous conversation sessions to resume.
 - `/resume [id]`: Resume a previous session by ID.
 - `/theme [name]`: Switch TrueColor terminal theme (`catppuccin`, `tokyonight`, `dracula`, etc.).

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dart_console/dart_console.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:nib/agent/agent.dart';
@@ -19,6 +20,9 @@ import 'package:nib/tools/skill_tool.dart';
 import 'package:nib/tools/web_fetch_tool.dart';
 import 'package:nib/tools/web_search_tool.dart';
 import 'package:nib/tools/write_file_tool.dart';
+import 'package:nib/ui/experiment_picker.dart';
+import 'package:nib/ui/slash_commands.dart';
+import 'package:nib/ui/transcript_writer.dart';
 
 void main() {
   late Directory tempDir;
@@ -562,6 +566,83 @@ void main() {
         expect(toolMsg.content, isNot(contains('rewind_reads')));
       },
     );
+
+    test(
+      '/experiments command toggles rewind_reads in-session and persists to config',
+      () async {
+        final configFile = File(p.join(tempDir.path, 'config.json'));
+        final config = NibConfig(
+          defaultProvider: 'openai',
+          loadedFromPath: configFile.path,
+        );
+        final agent = Agent(
+          provider: _ScriptedProvider(const []),
+          session: AgentSession(),
+          tools: [ReadFileTool(workingDirectory: tempDir.path)],
+        );
+        final lines = <String>[];
+        final writer = _TestWriter(onWriteLine: lines.add, onRewind: (_) {});
+        final slash = SlashCommandHandler(agent, config, writer);
+
+        expect(agent.hasTool('rewind_reads'), isFalse);
+
+        // Toggle on with `/experiments rewind_reads`
+        await slash.handle('/experiments rewind_reads');
+        expect(agent.hasTool('rewind_reads'), isTrue);
+        expect(config.isExperimentEnabled('rewind_reads'), isTrue);
+        expect(lines.join('\n'), contains('ENABLED'));
+
+        final persistedOn = await NibConfig.load(customPath: configFile.path);
+        expect(persistedOn.isExperimentEnabled('rewind_reads'), isTrue);
+
+        // Toggle off with `/experiments disable rewind_reads`
+        lines.clear();
+        await slash.handle('/experiments disable rewind_reads');
+        expect(agent.hasTool('rewind_reads'), isFalse);
+        expect(config.isExperimentEnabled('rewind_reads'), isFalse);
+        expect(lines.join('\n'), contains('DISABLED'));
+      },
+    );
+
+    test(
+      'ExperimentPicker interactive menu toggles on Space/Enter and cancels cleanly on Esc',
+      () async {
+        var enabled = false;
+        final lines = <String>[];
+        var rewinds = 0;
+        final writer = _TestWriter(
+          onWriteLine: lines.add,
+          onRewind: (count) => rewinds += count,
+        );
+
+        // Press Enter directly -> toggles highlighted item and closes
+        final keys1 = [Key.control(ControlCharacter.enter)];
+        var idx1 = 0;
+        final toggled1 = await ExperimentPicker.pickExperiments(
+          isEnabled: (_) => enabled,
+          onToggle: (_) async => enabled = !enabled,
+          writer: writer,
+          nextKey: () async => keys1[idx1++],
+        );
+
+        expect(toggled1, equals(['rewind_reads']));
+        expect(enabled, isTrue);
+        expect(rewinds, greaterThan(0));
+
+        // Press Space (toggles off) then Enter (confirms)
+        final keys2 = [Key.printable(' '), Key.control(ControlCharacter.enter)];
+        var idx2 = 0;
+        final toggled2 = await ExperimentPicker.pickExperiments(
+          isEnabled: (_) => enabled,
+          onToggle: (_) async => enabled = !enabled,
+          writer: writer,
+          nextKey: () async => keys2[idx2++],
+        );
+
+        expect(toggled2, equals(['rewind_reads']));
+        expect(enabled, isFalse);
+      },
+    );
   });
 }
 
@@ -620,4 +701,17 @@ class _CallbackProvider implements LLMProvider {
       yield event;
     }
   }
+}
+
+class _TestWriter implements TranscriptWriter {
+  final void Function(String line) onWriteLine;
+  final void Function(int rows) onRewind;
+
+  _TestWriter({required this.onWriteLine, required this.onRewind});
+
+  @override
+  void writeLine(String line) => onWriteLine(line);
+
+  @override
+  void rewind(int rows) => onRewind(rows);
 }
