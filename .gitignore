@@ -12,6 +12,7 @@ build/
 # .nib/skills/ is deliberately NOT ignored: it is a skill discovery path and is
 # meant to be committed.
 .nib/skills.json
+.nib/check.json
 
 # IDE & OS
 .DS_Store
