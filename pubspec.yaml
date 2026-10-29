@@ -1,6 +1,6 @@
 name: nib
 description: A minimalist terminal CLI coding agent in Dart (inspired by Pi and Tau).
-version: 0.2.9
+version: 0.2.10
 repository: https://github.com/nicklisac/nib
 
 executables:
