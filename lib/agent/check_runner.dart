@@ -191,9 +191,29 @@ class CheckController {
     // Enabled but unconfigured: observe only (flag on, so zero cost when
     // off). Offer the human a one-time suggestion at idle; never guess a
     // verdict from it (#54).
-    if (suggestionsAllowed && _plausibleCheck.hasMatch(command)) {
-      _suggestion = command.trim();
+    if (suggestionsAllowed) {
+      final candidate = _plausibleCheckCommand(command);
+      if (candidate != null) _suggestion = candidate;
     }
+  }
+
+  static final RegExp _segmentSplit = RegExp(r'&&|\|\||;|\n');
+
+  /// The check-shaped command within [command], or null. Agent bash commands
+  /// nearly always lead with `cd <dir> &&`, so every shell segment is matched
+  /// at its start rather than the whole line. The suggestion is cut at a
+  /// pipe: a piped segment's exit code belongs to the tail of the pipe, not
+  /// the checker, so `npm run check | tail -1` must be offered as the bare
+  /// checker (`#54`).
+  static String? _plausibleCheckCommand(String command) {
+    for (final raw in command.split(_segmentSplit)) {
+      final seg = raw.trim();
+      if (!_plausibleCheck.hasMatch(seg)) continue;
+      final pipe = seg.indexOf('|');
+      final stripped = (pipe > 0 ? seg.substring(0, pipe) : seg).trim();
+      if (stripped.isNotEmpty) return stripped;
+    }
+    return null;
   }
 
   static final RegExp _plausibleCheck = RegExp(

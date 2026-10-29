@@ -519,6 +519,23 @@ void main() {
       },
     );
 
+    test(
+      'cd-prefixed commands still trigger, suggestion is the bare checker',
+      () {
+        // Agents lead bash commands with `cd <dir> &&`; anchoring the match at
+        // the whole line meant the suggestion never fired in real sessions.
+        final c = CheckController(
+          workspace: '.',
+          settings: null,
+          enabled: true,
+        );
+        c.beforeBashRun(
+          'cd /some/proj && dart analyze --fatal-infos 2>&1 | tail -1',
+        );
+        expect(c.pendingSuggestion, 'dart analyze --fatal-infos 2>&1');
+      },
+    );
+
     test('non-check commands do not trigger suggestions', () {
       final c = CheckController(workspace: '.', settings: null, enabled: true);
       c.beforeBashRun('git commit -m x');
