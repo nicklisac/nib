@@ -76,6 +76,11 @@ To add a tool: subclass `AgentTool` in `lib/tools/`, implement `name`, `descript
   [itch log](https://github.com/nicklisac/nib/issues/19) (`gh issue edit 19 --body-file`),
   then carry on with what they actually asked for. Capture without asking and without
   triaging; the log is visible on the tracker, which is what gets it read.
+- Before proposing a new experiment — a bet about agent behaviour gated behind `/experiments` — read
+  the [experiment ledger](https://github.com/nicklisac/nib/issues/55) and add a row at the `idea`
+  state, with its deciding number, before writing code. Experiments that touch `lib/` also get their
+  own issue; a prompt tweak or config default is a row plus the commit. An experiment that reaches no
+  measurement by the time that area of `lib/` is next touched is deleted, with a line saying so.
 
 ## Agent skills
 
