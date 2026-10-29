@@ -136,7 +136,7 @@ class NibConfig {
     ExperimentSpec(
       id: 'post_bundle_check',
       description:
-          'Run the project check command after each edit bundle (#54); needs check.command in workspace .nib/config.json',
+          'Run the project check command after each edit bundle (#54); needs a command in workspace .nib/check.json',
     ),
   ];
 

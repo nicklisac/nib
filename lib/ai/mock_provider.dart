@@ -149,6 +149,24 @@ class MockProvider implements LLMProvider {
       return;
     }
 
+    if (userText.contains('create') || userText.contains('write')) {
+      yield ThoughtDeltaEvent(
+        'User asked for a file write. Invoking write_file...\n',
+      );
+      await Future.delayed(const Duration(milliseconds: 120));
+
+      yield TextDeltaEvent('Writing the requested file.\n');
+      yield ToolCallCompleteEvent(
+        ToolCall(
+          id: 'mock_call_$_turnCount',
+          name: 'write_file',
+          arguments: {'path': 'hello.txt', 'content': 'written by the mock\n'},
+        ),
+      );
+      yield DoneEvent(finishReason: 'tool_calls');
+      return;
+    }
+
     if (userText.contains('git') || userText.contains('status')) {
       yield ThoughtDeltaEvent('Executing bash command: git status...\n');
       await Future.delayed(const Duration(milliseconds: 120));
