@@ -12,6 +12,7 @@ import '../ai/anthropic_provider.dart';
 import '../ai/image_attachment.dart';
 import '../ai/mock_provider.dart';
 import '../ai/openai_provider.dart';
+import '../tools/check_status_tool.dart';
 import '../tools/rewind_reads_tool.dart';
 import 'ansi.dart';
 import 'experiment_picker.dart';
@@ -601,6 +602,26 @@ class SlashCommandHandler {
         }
       } else {
         agent.unregisterTool(RewindReadsTool.toolName);
+      }
+    }
+    // post_bundle_check (#54): flip the controller, the conditional tool, and
+    // the prompt section together, so an off experiment costs zero prompt and
+    // registers nothing.
+    if (id == 'post_bundle_check') {
+      final ctrl = agent.checkController;
+      if (ctrl != null) {
+        ctrl.enabled = enabled;
+        if (enabled && ctrl.isActive) {
+          if (!agent.hasTool(CheckStatusTool.toolName)) {
+            agent.registerTool(CheckStatusTool(ctrl));
+          }
+        } else {
+          agent.unregisterTool(CheckStatusTool.toolName);
+        }
+        agent.session.experimentPromptSection = ctrl.promptSection ?? '';
+        agent.session.rebuildSystemPrompt(
+          appendPrompt: config?.systemPromptAppend,
+        );
       }
     }
     if (config != null) {

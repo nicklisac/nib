@@ -133,6 +133,11 @@ class NibConfig {
       description:
           'Replace dead-end read-only tool turns with a short note (context neuralizer)',
     ),
+    ExperimentSpec(
+      id: 'post_bundle_check',
+      description:
+          'Run the project check command after each edit bundle (#54); needs check.command in workspace .nib/config.json',
+    ),
   ];
 
   String defaultProvider;
@@ -236,6 +241,63 @@ class NibConfig {
       }
     }
     return null;
+  }
+
+  /// Per-project check block, read from a dedicated `.nib/check.json` in the
+  /// workspace (#54).
+  ///
+  /// A sidecar file rather than a `check` key in `.nib/config.json`, because
+  /// [load] *replaces* rather than merges (first existing file wins): the
+  /// suggestion flow writing a workspace config in a project that has none
+  /// would silently mask the human's entire global config. The sidecar has
+  /// no such interaction. Returns null when absent or blank; blank disables
+  /// the feature and nothing is ever auto-detected.
+  static Future<Map<String, dynamic>?> readWorkspaceCheckBlock(
+    String workspacePath,
+  ) async {
+    final file = File(p.join(workspacePath, '.nib', 'check.json'));
+    if (!await file.exists()) return null;
+    try {
+      final json = jsonDecode(await file.readAsString());
+      if (json is! Map) return null;
+      // Accept both shapes so hand-written and nib-written files behave the
+      // same: the bare block {"command": ...} and the wrapper
+      // {"check": {"command": ...}} some people will reach for by habit.
+      final block = json['check'] is Map ? json['check'] : json;
+      if (block is Map) return Map<String, dynamic>.from(block);
+    } catch (_) {
+      // A malformed workspace config must never block startup; the feature
+      // simply stays inert.
+    }
+    return null;
+  }
+
+  /// Persist the workspace check block (#54 suggestion flow). Accepts either
+  /// the bare block or a `{"check": {...}}` wrapper for symmetry with the
+  /// read side; always writes the bare block.
+  static Future<void> writeWorkspaceCheckBlock(
+    String workspacePath,
+    Map<String, dynamic> checkBlock,
+  ) async {
+    final block = checkBlock['check'] is Map
+        ? Map<String, dynamic>.from(checkBlock['check'] as Map)
+        : checkBlock;
+    final dir = Directory(p.join(workspacePath, '.nib'));
+    final file = File(p.join(dir.path, 'check.json'));
+    if (await file.exists()) {
+      // Never silently clobber a hand-written file we cannot parse.
+      try {
+        jsonDecode(await file.readAsString());
+      } catch (_) {
+        throw StateError(
+          '${file.path} exists but is not valid JSON. Fix it by hand before '
+          'nib writes to it.',
+        );
+      }
+    } else {
+      await dir.create(recursive: true);
+    }
+    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(block));
   }
 
   /// Loads configuration from custom path, workspace `.nib/config.json`, or `~/.nib/config.json`.

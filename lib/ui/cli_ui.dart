@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:dart_console/dart_console.dart';
 import '../agent/agent.dart';
 import '../agent/approval_manager.dart';
+import '../agent/check_runner.dart';
 import '../agent/config.dart';
 import '../agent/session.dart';
 import '../agent/updater.dart';
@@ -33,6 +34,9 @@ import 'transcript_render_model.dart';
 class CliUi {
   final Agent agent;
   final NibConfig? config;
+
+  /// Post-bundle check controller for the suggestion-at-idle flow (#54).
+  final CheckController? checkController;
   final SlashCommandHandler _slashHandler;
   SlashCommandHandler get slashHandler => _slashHandler;
   final PromptReader _promptReader = PromptReader();
@@ -75,9 +79,13 @@ class CliUi {
   /// prints with the prompt instead, so those facts are on screen either way.
   bool _bandPinned = false;
 
-  CliUi(this.agent, [this.config, void Function(String text)? out])
-    : _outSink = out,
-      _slashHandler = SlashCommandHandler(agent, config) {
+  CliUi(
+    this.agent, [
+    this.config,
+    void Function(String text)? out,
+    this.checkController,
+  ]) : _outSink = out,
+       _slashHandler = SlashCommandHandler(agent, config) {
     _slashHandler.onRedraw = () {
       redrawScreen();
     };
@@ -213,6 +221,50 @@ class CliUi {
         // in its place when there is no band, so the facts are never missing.
         if (!_bandPinned) {
           _writeLine(StatusBar.render(agent));
+        }
+
+        // Post-bundle check suggestion, offered only here at the idle prompt
+        // where the human owns the terminal — never mid-turn (feel doctrine
+        // rule 1, #54). y writes .nib/check.json, n persists the decline.
+        final ctrl = checkController;
+        final suggestion = ctrl?.pendingSuggestion;
+        if (ctrl != null && suggestion != null) {
+          _writeLine('');
+          _writeLine(
+            '  ${theme.accent.text('check')} ${theme.secondary.text('I noticed you run')} '
+            '${theme.accent.text(suggestion)}',
+          );
+          _writeLine(
+            '  ${theme.secondary.text("Use it as this project's check command? [y/N]")}',
+          );
+          final answer = (await _readTurn(
+            theme.secondary.text('> '),
+          ))?.text.trim().toLowerCase();
+          final accepted = answer == 'y' || answer == 'yes';
+          ctrl.resolveSuggestion(suggestion, accepted);
+          try {
+            if (accepted) {
+              await NibConfig.writeWorkspaceCheckBlock(Directory.current.path, {
+                'command': suggestion,
+              });
+              ctrl.settings = CheckSettings(command: suggestion);
+              _writeLine(
+                '  ${theme.success.text('✔')} ${theme.secondary.text('check.command saved to .nib/check.json')}',
+              );
+            } else {
+              await NibConfig.writeWorkspaceCheckBlock(Directory.current.path, {
+                'suggest': false,
+              });
+              _writeLine(
+                '  ${theme.muted.text('noted; configure check.command in .nib/check.json when ready')}',
+              );
+            }
+            agent.session.experimentPromptSection = ctrl.promptSection ?? '';
+            agent.session.rebuildSystemPrompt();
+          } catch (e) {
+            _writeLine('  ${theme.error.text('✖')} could not write config: $e');
+          }
+          _writeLine('');
         }
 
         final promptString = ScreenCoordinator.instance.isActive
@@ -744,6 +796,28 @@ class CliUi {
         _writeLine(line);
         _writeLine('');
         _ambient.resumeStreaming();
+      },
+      onCheckNotice: (notice) {
+        // Post-bundle check verdict (#54), printed at an iteration boundary
+        // like the rewind line: the stream owns the screen, and this fires
+        // between iterations, never mid-row.
+        markdownPrinter.flush();
+        if (_inThoughtBlock) {
+          _writeLine('');
+          _writeLine('');
+          _inThoughtBlock = false;
+        }
+        final first = notice.split('\n').first;
+        final failed = notice.contains('[check failed');
+        final notRun = notice.contains('[check not run');
+        final painted = failed
+            ? theme.warning.text(first)
+            : notRun
+            ? theme.secondary.text(first)
+            : theme.muted.text(first);
+        final line = '  $painted';
+        _renderModel.add(StatusBlock(line));
+        _writeLine(line);
       },
       onError: (error) {
         markdownPrinter.flush();

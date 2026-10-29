@@ -30,7 +30,8 @@ Nib loads configuration from `.nib/config.json` in the current workspace, or `~/
   "max_tokens": 4096,
   "thinking_level": "medium",
   "experiments": {
-    "rewind_reads": false
+    "rewind_reads": false,
+    "post_bundle_check": false
   },
   "providers": {
     "openai": {
@@ -67,6 +68,15 @@ Nib loads configuration from `.nib/config.json` in the current workspace, or `~/
   }
 }
 ```
+
+### Post-bundle project check (experiment)
+
+With `"experiments": {"post_bundle_check": true}` and a workspace `.nib/check.json` sidecar like
+`{"command": "npm run check"}` (optional `timeout_ms`, `grace_ms`, `"report": "issues"`), Nib runs
+that command after every tool bundle that edits files. Verdicts reach the transcript as
+`[check clean: ...]`, `[check failed: ... (exit code N)]` plus raw output, or `[check not run:
+reason]`, inline when fast, as a notice when not. `check_status` returns the current verdict
+without re-running. A blank or absent command disables it; Nib never guesses one.
 
 ### Supported Web Search Providers
 Every key field (`api_key` on a provider and `search_api_key`) accepts either the key itself or the NAME of an environment variable, such as `"api_key": "OPENAI_API_KEY"`. A variable name is looked up at launch, so the secret never has to sit in the file. If the named variable is not set, Nib says so and sends no key.

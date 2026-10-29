@@ -101,6 +101,12 @@ class AgentSession {
 
   final String id;
   String systemPrompt;
+
+  /// Prompt text contributed by live experiments (e.g. `post_bundle_check`,
+  /// #54). Injected by every `rebuildSystemPrompt` so toggling mid-session
+  /// takes effect through any rebuild path. Empty when no such experiment is
+  /// active, keeping the zero prompt cost guarantee (#54).
+  String experimentPromptSection = '';
   final List<ChatMessage> _messages = [];
   final List<RewindRecord> _rewinds = [];
 
@@ -149,6 +155,26 @@ class AgentSession {
 
   void addRewindRecord(RewindRecord record) {
     _rewinds.add(record);
+  }
+
+  /// Append text in place to the most recent tool result (#54). Same in-place
+  /// replacement mechanism rewind_reads proved safe: `_messages` persists to
+  /// disk once per turn, so amending before the next provider call leaves the
+  /// session file consistent. Returns false when no tool result exists.
+  bool amendLastToolResult(String extra) {
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i].role == Role.tool) {
+        final m = _messages[i];
+        _messages[i] = ChatMessage.toolResult(
+          toolCallId: m.toolCallId ?? '',
+          toolName: m.toolName ?? '',
+          content: '${m.content ?? ''}$extra',
+          images: m.images,
+        );
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Validates and rewinds the immediately preceding tool turn in-place (#53).
@@ -395,8 +421,9 @@ class AgentSession {
         '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final runtimeInfo =
         '\n\nCurrent date: $dateStr\nCurrent working directory: $cwd';
+    final experiment = experimentPromptSection;
 
-    systemPrompt = '$base$skillsPrompt$append$runtimeInfo';
+    systemPrompt = '$base$skillsPrompt$append$experiment$runtimeInfo';
     addSystemPromptIfNeeded();
   }
 

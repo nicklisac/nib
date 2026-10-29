@@ -14,6 +14,13 @@ class BashTool extends AgentTool {
   BashTool({String? workingDirectory})
     : workingDirectory = workingDirectory ?? Directory.current.path;
 
+  /// Called with the command line before the process starts. Used by the
+  /// post-bundle check experiment (#54) to cancel an in-flight background
+  /// check before a foreground build runs: concurrent compiler processes
+  /// collide on build locks, and the model reads a lock stall as a code
+  /// failure.
+  void Function(String command)? onBeforeCommand;
+
   @override
   void cancel() {
     try {
@@ -76,6 +83,11 @@ class BashTool extends AgentTool {
     if (!approved) {
       return ToolResult.text('Command cancelled by user: "$command"');
     }
+
+    // Cancel any in-flight background check before this command can collide
+    // with it on build locks (#54). Fires post-approval: a command the user
+    // declined never disturbed anything.
+    onBeforeCommand?.call(command);
 
     try {
       final shellExecutable = Platform.isWindows ? 'cmd.exe' : 'bash';

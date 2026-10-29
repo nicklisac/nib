@@ -4,6 +4,7 @@ import '../ai/chat_message.dart';
 import '../ai/event_stream.dart';
 import '../ai/image_attachment.dart';
 import '../ai/provider.dart';
+import 'check_runner.dart';
 import 'compaction.dart';
 import 'context_meter.dart';
 import 'session.dart';
@@ -20,6 +21,7 @@ class AgentCallbacks {
   onToolCallFinished;
   final void Function(ToolCall toolCall, String line)? onToolProgress;
   final void Function(RewindRecord record)? onRewind;
+  final void Function(String notice)? onCheckNotice;
   final void Function(String error)? onError;
 
   AgentCallbacks({
@@ -29,6 +31,7 @@ class AgentCallbacks {
     this.onToolCallFinished,
     this.onToolProgress,
     this.onRewind,
+    this.onCheckNotice,
     this.onError,
   });
 }
@@ -38,6 +41,10 @@ class Agent {
   LLMProvider provider;
   AgentSession session;
   final Map<String, AgentTool> _tools = {};
+
+  /// Post-bundle project check (#54, experiment `post_bundle_check`). Null or
+  /// inactive means no checks, no prompt section, no overhead.
+  CheckController? checkController;
 
   /// Ceiling on tool-loop iterations within one user prompt. `0` means unbounded,
   /// which is the default: real agentic work (planning skills, multi-file
@@ -118,6 +125,7 @@ class Agent {
   /// Cancels the currently running turn and any active tool processes.
   void cancel() {
     _isCancelled = true;
+    checkController?.cancelAll();
     velocityTracker.endBurst();
     _activeStreamSub?.cancel();
     _activeStreamSub = null;
@@ -169,6 +177,13 @@ class Agent {
       final thoughtBuffer = StringBuffer();
       final toolCalls = <ToolCall>[];
       String? lastFinishReason;
+
+      // Bundles that mutated the workspace get a post-bundle check (#54).
+      final check = checkController;
+      var bundleMutations = 0;
+      if (check != null && check.isActive) {
+        check.bundleHasMutations = false;
+      }
 
       velocityTracker.startBurst();
 
@@ -394,6 +409,18 @@ class Agent {
           break;
         }
 
+        // Post-bundle project check (#54): track mutations so the bundle close can
+        // schedule (or absorb) a check run. [check] is declared at iteration
+        // top.
+        if (check != null &&
+            check.isActive &&
+            (call.name == 'edit_file' || call.name == 'write_file')) {
+          final mutatedPath = call.arguments['path'];
+          check.recordMutation(mutatedPath is String ? mutatedPath : '?');
+          check.bundleHasMutations = true;
+          bundleMutations++;
+        }
+
         session.toolExecutionsCount++;
         callbacks?.onToolCallFinished?.call(
           call,
@@ -428,6 +455,40 @@ class Agent {
         break;
       }
 
+      // Post-bundle project check (#54): grace-inline the verdict into the
+      // last mutating tool result if the check lands inside the grace window,
+      // otherwise commit an async note and deliver the verdict as a notice at
+      // a later boundary. Injected notices and inline verdicts deliberately
+      // stay OUT of resultParts so the runaway guard's iteration signature is
+      // unaffected, and verdict transcript text is byte-stable by design.
+      if (check != null && check.isActive && bundleMutations > 0) {
+        check.bundleHasMutations = false;
+        final (verdict: verdict, running: running) = await _runCheckWithGrace(
+          check,
+        );
+        if (verdict != null) {
+          if (check.deliversTo(verdict)) {
+            session.amendLastToolResult('\n${verdict.transcriptText}');
+            callbacks?.onCheckNotice?.call(verdict.transcriptText);
+          }
+        } else if (running) {
+          // Overran (or grace adaptively skipped): tell the model a verdict
+          // is coming, that it must not re-run the check through bash, and
+          // where to ask. Fixed text: byte-stable like the verdicts (#54).
+          session.amendLastToolResult(
+            '\n[check running async: do not run the check command through '
+            'bash; call check_status if you need the verdict now]',
+          );
+        }
+        // verdict == null && !running: the run was absorbed by an equivalent
+        // external bash check; the model already has that result. No note.
+      }
+      // Deliver completed async notices at this iteration boundary.
+      for (final notice in check?.takeNotices() ?? const <String>[]) {
+        session.addMessage(ChatMessage.assistant(notice));
+        callbacks?.onCheckNotice?.call(notice);
+      }
+
       // Runaway guard. An iteration is identified by its tool calls *and* their
       // results, so re-running a command whose output changed (polling a build,
       // watching a log) is real progress and never counts against the limit.
@@ -458,8 +519,49 @@ class Agent {
       }
     }
 
+    // Post-bundle check, turn end (#54): the loop can finish while a check is
+    // still running — commonly the model stops right after the edit bundle.
+    // Wait a bounded window, deliver what finished, carry the rest to the
+    // next turn's first boundary. Turn cancellation skips the wait entirely.
+    if (!_isCancelled) {
+      final check = checkController;
+      if (check != null && check.isActive) {
+        final graceMs = check.settings?.graceMs ?? 1000;
+        await check.drainPending(
+          bound: Duration(milliseconds: (graceMs * 30).clamp(2000, 30000)),
+        );
+        for (final notice in check.takeNotices()) {
+          session.addMessage(ChatMessage.assistant(notice));
+          callbacks?.onCheckNotice?.call(notice);
+        }
+      }
+    }
+
     // Auto-persist session to disk
     await session.saveToDisk();
+  }
+
+  /// Post-bundle check with inline grace (#54). Returns the completed verdict
+  /// when it lands inside the grace window. A null verdict with `running` true
+  /// means the run overran (or the grace was adaptively skipped) and will
+  /// deliver via notice; null with `running` false means the run was absorbed
+  /// by an equivalent external bash check or killed, and no note is warranted.
+  Future<({CheckVerdict? verdict, bool running})> _runCheckWithGrace(
+    CheckController check,
+  ) async {
+    final graceMs = check.settings?.graceMs ?? 1000;
+    final future = check.start();
+    if (!check.graceWorthwhile) {
+      check.attachLateDelivery(future);
+      return (verdict: null, running: true);
+    }
+    try {
+      final verdict = await future.timeout(Duration(milliseconds: graceMs));
+      return (verdict: verdict, running: false);
+    } on TimeoutException {
+      check.attachLateDelivery(future);
+      return (verdict: null, running: true);
+    }
   }
 
   static const int maxToolOutputChars = 20000;

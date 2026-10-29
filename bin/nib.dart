@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:nib/agent/agent.dart';
 import 'package:nib/agent/approval_manager.dart';
+import 'package:nib/agent/check_runner.dart';
 import 'package:nib/agent/config.dart';
 import 'package:nib/agent/session.dart';
 import 'package:nib/agent/updater.dart';
@@ -12,6 +13,7 @@ import 'package:nib/ai/mock_provider.dart';
 import 'package:nib/ai/openai_provider.dart';
 import 'package:nib/ai/provider.dart';
 import 'package:nib/tools/bash_tool.dart';
+import 'package:nib/tools/check_status_tool.dart';
 import 'package:nib/tools/edit_file_tool.dart';
 import 'package:nib/tools/list_dir_tool.dart';
 import 'package:nib/tools/read_file_tool.dart';
@@ -200,6 +202,25 @@ void main(List<String> arguments) async {
     config.systemPromptAppend = (global == null || global.isEmpty)
         ? projectInstructions
         : '$global\n\n$projectInstructions';
+  }
+
+  // Post-bundle project check experiment (#54). Command is workspace-only
+  // (.nib/check.json sidecar); blank or absent disables it and nothing is
+  // auto-detected into a verdict.
+  final checkBlock = await NibConfig.readWorkspaceCheckBlock(
+    Directory.current.path,
+  );
+  final checkController = CheckController(
+    workspace: Directory.current.path,
+    settings: _checkSettingsFrom(checkBlock),
+    enabled: config.isExperimentEnabled('post_bundle_check'),
+  )..suggestionsAllowed = checkBlock?['suggest'] != false;
+  if (checkController.enabled && checkController.settings == null) {
+    stderr.writeln(
+      'post_bundle_check is on but this project has no check command. '
+      'Add {"command": "..."} to .nib/check.json to enable it. '
+      'Inert until then.',
+    );
   }
 
   final isMock = results['mock'] as bool;
@@ -417,6 +438,7 @@ void main(List<String> arguments) async {
   // Bodies are not injected: the system prompt carries an index and the model
   // pulls a skill's full instructions through the `skill` tool.
   await SkillsManager.instance.loadSkills(workspacePath: workspace);
+  session.experimentPromptSection = checkController.promptSection ?? '';
   session.rebuildSystemPrompt(
     appendPrompt: config.systemPromptAppend,
     workspacePath: workspace,
@@ -436,6 +458,8 @@ void main(List<String> arguments) async {
     WebFetchTool(),
     SkillTool(),
     if (config.isExperimentEnabled(RewindReadsTool.toolName)) RewindReadsTool(),
+    if (config.isExperimentEnabled(CheckStatusTool.toolName))
+      CheckStatusTool(checkController),
   ];
 
   // The active provider wins over the top-level values: loop ceilings and the
@@ -467,7 +491,16 @@ void main(List<String> arguments) async {
     thinkingLevel: activeThinkingLevel,
   );
 
-  final ui = CliUi(agent, config);
+  agent.checkController = checkController;
+  // Bash runs cancel the in-flight background check first (build-lock
+  // collisions read as code failures to the model, #54).
+  for (final t in tools) {
+    if (t is BashTool) {
+      t.onBeforeCommand = checkController.beforeBashRun;
+    }
+  }
+
+  final ui = CliUi(agent, config, null, checkController);
 
   TerminalManager.instance.initialize();
   try {
@@ -496,4 +529,19 @@ void main(List<String> arguments) async {
   } finally {
     TerminalManager.instance.dispose();
   }
+}
+
+/// Parse the workspace check sidecar block (#54). A blank or non-string
+/// command yields null: blank disables, nothing is guessed.
+CheckSettings? _checkSettingsFrom(Map<String, dynamic>? block) {
+  if (block == null) return null;
+  final command = block['command'];
+  if (command is! String || command.trim().isEmpty) return null;
+  final report = block['report'];
+  return CheckSettings(
+    command: command.trim(),
+    timeoutMs: (block['timeout_ms'] as num?)?.toInt() ?? 30000,
+    graceMs: (block['grace_ms'] as num?)?.toInt() ?? 1000,
+    reportAlways: report != 'issues',
+  );
 }
